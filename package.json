@@ -43,7 +43,20 @@
       "CONFIGURED"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/crimsonbear-menu-icon.png",
+          "menuIcon": true,
+          "targetPlatforms": [
+            "emery",
+            "gabbro"
+          ],
+          "memoryFormat": "SmallestPalette",
+          "spaceOptimization": "storage"
+        }
+      ]
     }
   }
 }
