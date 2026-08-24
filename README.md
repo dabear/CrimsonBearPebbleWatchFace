@@ -6,6 +6,8 @@
 
 A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It shows current glucose in a circle, trend arrow, delta, a 12-reading graph, date/time, and battery using the current Alloy embedded JavaScript runtime.
 
+[Install CrimsonBear Cgm from the Pebble App Store](https://apps.rePebble.com/ebc3f63147e6481599da4b8e)
+
 <p align="center">
   <img src="assets/watchface-screenshot.png" alt="CrimsonBear Cgm running on Pebble Time 2" width="200">
 </p>
