@@ -10,6 +10,9 @@ class CrimsonBearWatchface {
       delta: new this.render.Font("Gothic-Bold", 24),
       label: new this.render.Font("Gothic-Regular", 18),
       footer: new this.render.Font("Bitham-Black", 30),
+      fullGlucose: new this.render.Font("Bitham-Bold", 42),
+      fullDelta: new this.render.Font("Bitham-Black", 30),
+      fullLabel: new this.render.Font("Gothic-Bold", 24),
     };
     this.colors = {
       ink: this.render.makeColor(64, 0, 16),
@@ -73,25 +76,25 @@ class CrimsonBearWatchface {
     return `${this.state.delta > 0 ? "+" : ""}${value}`;
   }
 
-  drawGlucose(cx, y) {
+  drawGlucose(cx, y, font = this.fonts.glucose) {
     const color = this.glucoseColor(this.state.glucose);
     const value = this.glucoseText();
     if (this.state.units !== "mmol/L" || this.state.glucose == null) {
-      this.text(value, this.fonts.glucose, color, cx, y, true);
+      this.text(value, font, color, cx, y, true);
       return;
     }
 
     const [whole, fraction] = value.split(".");
-    const wholeWidth = this.render.getTextWidth(whole, this.fonts.glucose);
-    const fractionWidth = this.render.getTextWidth(fraction, this.fonts.glucose);
+    const wholeWidth = this.render.getTextWidth(whole, font);
+    const fractionWidth = this.render.getTextWidth(fraction, font);
     const decimalWidth = 9;
     const left = Math.round(cx - (wholeWidth + decimalWidth + fractionWidth) / 2);
-    this.text(whole, this.fonts.glucose, color, left, y);
+    this.text(whole, font, color, left, y);
     this.render.drawCircle(color, left + wholeWidth + 4, y + 34, 3, 0, 360);
-    this.text(fraction, this.fonts.glucose, color, left + wholeWidth + decimalWidth, y);
+    this.text(fraction, font, color, left + wholeWidth + decimalWidth, y);
   }
 
-  arrow(cx, cy, direction, color) {
+  arrow(cx, cy, direction, color, scale = 1) {
     const slopes = {
       DoubleUp: -2,
       SingleUp: -1.2,
@@ -107,18 +110,26 @@ class CrimsonBearWatchface {
       return;
     }
 
-    const dx = Math.abs(slope) > 1.5 ? 6 : 14;
-    const dy = Math.max(-18, Math.min(18, Math.round(dx * slope)));
-    this.render.drawLine(cx - dx, cy - dy, cx + dx, cy + dy, color, 5);
+    const dx = Math.round((Math.abs(slope) > 1.5 ? 6 : 14) * scale);
+    const limit = Math.round(18 * scale);
+    const dy = Math.max(-limit, Math.min(limit, Math.round(dx * slope)));
+    this.render.drawLine(
+      cx - dx,
+      cy - dy,
+      cx + dx,
+      cy + dy,
+      color,
+      Math.round(5 * scale)
+    );
     for (const offset of [-0.72, 0.72]) {
       const angle = Math.atan2(dy, dx) + offset;
       this.render.drawLine(
         cx + dx,
         cy + dy,
-        Math.round(cx + dx - 11 * Math.cos(angle)),
-        Math.round(cy + dy - 11 * Math.sin(angle)),
+        Math.round(cx + dx - 11 * scale * Math.cos(angle)),
+        Math.round(cy + dy - 11 * scale * Math.sin(angle)),
         color,
-        4
+        Math.round(4 * scale)
       );
     }
   }
@@ -325,21 +336,29 @@ class CrimsonBearWatchface {
     this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 3, 0, 360);
-    this.drawGlucose(cx, cy - 48);
+    this.drawGlucose(cx, cy - 53, this.fonts.fullGlucose);
     this.text(
       `${unit}  ${ageText}`,
-      this.fonts.label,
+      this.fonts.fullLabel,
       age != null && age > 10 ? this.colors.low : this.colors.ink,
       cx,
-      cy - 6,
+      cy - 7,
       true
     );
-    this.text(this.deltaText(), this.fonts.delta, this.colors.ink, cx, cy + 17, true);
+    this.text(
+      this.deltaText(),
+      this.fonts.fullDelta,
+      this.colors.ink,
+      cx,
+      cy + 22,
+      true
+    );
     this.arrow(
       cx + Math.round(radius * 0.58),
       cy,
       this.state.direction,
-      this.colors.crimson
+      this.colors.crimson,
+      1.25
     );
     this.footer(width, height, footerHeight, now);
   }
