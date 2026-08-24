@@ -1,6 +1,6 @@
 {
-  "name": "crisonbear-cgm",
-  "author": "CrisonBear Cgm contributors",
+  "name": "crimsonbear-cgm",
+  "author": "CrimsonBear Cgm contributors",
   "version": "2.0.0",
   "private": true,
   "description": "A bear-themed CGM watchface for Pebble Time 2 and newer watches",
@@ -21,7 +21,7 @@
     "prettier": "^3.6.2"
   },
   "pebble": {
-    "displayName": "CrisonBear Cgm",
+    "displayName": "CrimsonBear Cgm",
     "uuid": "8d99f626-1199-4a60-ace8-70829b9755e4",
     "projectType": "moddable",
     "sdkVersion": "3",

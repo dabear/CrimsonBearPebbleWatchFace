@@ -2,7 +2,7 @@ import Poco from "commodetto/Poco";
 import Message from "pebble/message";
 import Battery from "embedded:sensor/Battery";
 
-class CrisonBearWatchface {
+class CrimsonBearWatchface {
   constructor() {
     this.render = new Poco(screen);
     this.fonts = {
@@ -61,6 +61,15 @@ class CrisonBearWatchface {
     return this.state.units === "mmol/L"
       ? Number(this.state.glucose).toFixed(1)
       : String(this.state.glucose);
+  }
+
+  deltaText() {
+    if (this.state.delta == null) return "--";
+    const value =
+      this.state.units === "mmol/L"
+        ? Number(this.state.delta).toFixed(1)
+        : String(this.state.delta);
+    return `${this.state.delta > 0 ? "+" : ""}${value}`;
   }
 
   drawGlucose(cx, y) {
@@ -248,7 +257,7 @@ class CrisonBearWatchface {
     );
     this.text("on your phone", this.fonts.label, this.colors.pale, center, 148, true);
     this.text(
-      "CrisonBear Cgm settings",
+      "CrimsonBear Cgm settings",
       this.fonts.label,
       this.colors.white,
       center,
@@ -293,10 +302,7 @@ class CrisonBearWatchface {
 
     const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
     const ageText = age == null ? "--m" : `${age}m`;
-    const delta =
-      this.state.delta == null
-        ? "--"
-        : `${this.state.delta > 0 ? "+" : ""}${this.state.delta}`;
+    const delta = this.deltaText();
     this.drawGlucose(cx, cy - 45);
     this.text(
       `${unit}  ${ageText}`,
@@ -378,7 +384,7 @@ class CrisonBearWatchface {
       true
     );
     this.text(
-      "Open CrisonBear Cgm",
+      "Open CrimsonBear Cgm",
       this.fonts.label,
       this.colors.white,
       center,
@@ -439,4 +445,4 @@ class CrisonBearWatchface {
   }
 }
 
-new CrisonBearWatchface().start();
+new CrimsonBearWatchface().start();

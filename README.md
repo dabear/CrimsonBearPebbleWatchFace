@@ -1,4 +1,8 @@
-# CrisonBear Cgm
+# CrimsonBear Cgm
+
+<p align="center">
+  <img src="assets/crimsonbear-teddy.png" alt="CrimsonBear teddy logo" width="180">
+</p>
 
 A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It shows current glucose in a circle, trend arrow, delta, a 12-reading graph, date/time, and battery using the current Alloy embedded JavaScript runtime.
 
@@ -18,20 +22,33 @@ Older platforms are deliberately excluded. The layout uses the unobstructed scre
 
 Credentials remain in the Pebble phone companion's local storage and are sent only to the selected CGM service. This watchface is informational and must not be used to make treatment decisions.
 
-## Build
+## Quick build
 
-Install `pebble-tool` 5.0.23 or newer and the latest Pebble SDK (4.9.148 or newer is recommended):
+You need Python 3, Node.js, [`uv`](https://docs.astral.sh/uv/), and a working ARM toolchain. Then run:
 
 ```sh
 uv tool install pebble-tool
 pebble sdk install latest
+git clone git@github.com:dabear/CrimsonBearPebbleWatchFace.git
+cd CrimsonBearPebbleWatchFace
+npm install
 pebble build
 ```
 
-Install on the Time 2 emulator:
+The finished package is written to `build/pebble.pbw`.
+
+## Install
+
+Enable Developer Connection in the Pebble phone app, then run:
 
 ```sh
-pebble install --emulator emery
+pebble install build/pebble.pbw --phone
+```
+
+To build and install on the Time 2 emulator instead:
+
+```sh
+pebble install build/pebble.pbw --emulator emery
 ```
 
 Open the watchface settings from the Pebble mobile app to configure a CGM source. The settings UI is bundled as a self-contained data URL, so it has no hosting dependency.

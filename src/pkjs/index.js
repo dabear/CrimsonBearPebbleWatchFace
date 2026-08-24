@@ -1,4 +1,4 @@
-/* Phone-side Nightscout and configuration bridge for CrisonBear Cgm. */
+/* Phone-side Nightscout and configuration bridge for CrimsonBear Cgm. */
 class SettingsStore {
   constructor(key) {
     this.key = key;
@@ -112,7 +112,7 @@ class NightscoutClient {
   }
 }
 
-class CrisonBearCompanion {
+class CrimsonBearCompanion {
   constructor() {
     this.store = new SettingsStore("crimson-cgm-settings-v2");
     this.settings = this.store.load();
@@ -173,7 +173,7 @@ input,select,button{box-sizing:border-box;width:100%;font:inherit;padding:10px}
 .save{margin-top:22px;background:#c00030;color:white;border:0}
 </style>
 <div class="bear-bg" aria-hidden="true">&#129528;</div>
-<h2>CrisonBear Cgm</h2>
+<h2>CrimsonBear Cgm</h2>
 <form id="f">
 <label>Nightscout URL</label><input name="endpoint" type="url" placeholder="https://my-site.example">
 <label>Nightscout token / API secret</label><input name="token">
@@ -209,4 +209,4 @@ f.onsubmit=(e)=>{e.preventDefault();const o={};new FormData(f).forEach((v,k)=>{o
   }
 }
 
-new CrisonBearCompanion().start();
+new CrimsonBearCompanion().start();
