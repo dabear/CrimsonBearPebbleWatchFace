@@ -1,0 +1,49 @@
+{
+  "name": "crisonbear-cgm",
+  "author": "CrisonBear Cgm contributors",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A bear-themed CGM watchface for Pebble Time 2 and newer watches",
+  "license": "MIT",
+  "keywords": [
+    "pebble-app",
+    "watchface",
+    "cgm",
+    "nightscout"
+  ],
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint src/**/*.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "prettier": "^3.6.2"
+  },
+  "pebble": {
+    "displayName": "CrisonBear Cgm",
+    "uuid": "8d99f626-1199-4a60-ace8-70829b9755e4",
+    "projectType": "moddable",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "configurable"
+    ],
+    "messageKeys": [
+      "COMMAND",
+      "DATA",
+      "ERROR",
+      "CONFIGURED"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

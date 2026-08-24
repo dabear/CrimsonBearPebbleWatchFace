@@ -1,0 +1,6 @@
+build/
+.DS_Store
+.lock-wscript
+.lock-waf_*
+.waf-*
+node_modules/
