@@ -14,6 +14,7 @@ class SettingsStore {
         // Thresholds are always persisted canonically as mg/dL.
         low: String(saved.low || 70),
         high: String(saved.high || 180),
+        fullScreen: Boolean(saved.fullScreen),
       };
       this.save(clean);
       return clean;
@@ -67,6 +68,7 @@ class NightscoutClient {
       low: rounded(Number(this.settings.low || 70)),
       high: rounded(Number(this.settings.high || 180)),
       updated: Number(latest.date || Date.now()),
+      fullScreen: Boolean(this.settings.fullScreen),
     };
   }
 
@@ -170,6 +172,8 @@ input,select,button{box-sizing:border-box;width:100%;font:inherit;padding:10px}
 .stepper{display:grid;grid-template-columns:48px 1fr 48px;gap:8px}
 .stepper button{margin:0;background:#800020;color:white;border:0;font-size:24px;font-weight:bold;touch-action:manipulation;user-select:none;-webkit-user-select:none}
 .stepper input{text-align:center}
+.toggle{display:flex;align-items:center;gap:10px;margin-top:18px}
+.toggle input{width:auto;transform:scale(1.35)}
 .save{margin-top:22px;background:#c00030;color:white;border:0}
 </style>
 <div class="bear-bg" aria-hidden="true">&#129528;</div>
@@ -180,18 +184,20 @@ input,select,button{box-sizing:border-box;width:100%;font:inherit;padding:10px}
 <label>Units</label><select name="units"><option>mg/dL</option><option>mmol/L</option></select>
 <label id="lowLabel">Low threshold</label><div class="stepper"><button type="button" data-field="low" data-direction="-1" aria-label="Decrease low threshold">−</button><input name="low" type="number"><button type="button" data-field="low" data-direction="1" aria-label="Increase low threshold">+</button></div>
 <label id="highLabel">High threshold</label><div class="stepper"><button type="button" data-field="high" data-direction="-1" aria-label="Decrease high threshold">−</button><input name="high" type="number"><button type="button" data-field="high" data-direction="1" aria-label="Increase high threshold">+</button></div>
+<label class="toggle"><input name="fullScreen" type="checkbox">Full-screen glucose ring (hide trend graph)</label>
 <button class="save">Save</button>
 </form>
 <script>
 const s=JSON.parse(decodeURIComponent("${values}"));
 const f=document.getElementById("f");
 Object.keys(s).forEach((k)=>{if(f[k])f[k].value=s[k]});
+f.fullScreen.checked=Boolean(s.fullScreen);
 let previousUnit="mg/dL";
 const updateThresholds=(unit)=>{const toMmol=unit==="mmol/L"&&previousUnit==="mg/dL";const toMg=unit==="mg/dL"&&previousUnit==="mmol/L";if(toMmol){f.low.value=(Number(f.low.value)/18).toFixed(1);f.high.value=(Number(f.high.value)/18).toFixed(1)}else if(toMg){f.low.value=Math.round(Number(f.low.value)*18);f.high.value=Math.round(Number(f.high.value)*18)}const mmol=unit==="mmol/L";f.low.step=mmol?"0.1":"1";f.high.step=mmol?"0.1":"1";f.low.min=mmol?"1.0":"18";f.high.min=mmol?"1.0":"18";document.getElementById("lowLabel").textContent="Low threshold ("+unit+")";document.getElementById("highLabel").textContent="High threshold ("+unit+")";previousUnit=unit};
 document.querySelectorAll(".stepper button").forEach((button)=>{button.onclick=()=>{const input=f[button.dataset.field];const step=Number(input.step);const value=Number(input.value)||0;const next=Math.max(Number(input.min),value+Number(button.dataset.direction)*step);input.value=f.units.value==="mmol/L"?next.toFixed(1):String(Math.round(next))}});
 updateThresholds(f.units.value);
 f.units.onchange=()=>updateThresholds(f.units.value);
-f.onsubmit=(e)=>{e.preventDefault();const o={};new FormData(f).forEach((v,k)=>{o[k]=v});if(o.units==="mmol/L"){o.low=String(Math.round(Number(o.low)*18));o.high=String(Math.round(Number(o.high)*18))}location="pebblejs://close#"+encodeURIComponent(JSON.stringify(o))};
+f.onsubmit=(e)=>{e.preventDefault();const o={};new FormData(f).forEach((v,k)=>{o[k]=v});o.fullScreen=f.fullScreen.checked;if(o.units==="mmol/L"){o.low=String(Math.round(Number(o.low)*18));o.high=String(Math.round(Number(o.high)*18))}location="pebblejs://close#"+encodeURIComponent(JSON.stringify(o))};
 </script>`;
     return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
   }

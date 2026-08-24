@@ -30,6 +30,7 @@ class CrimsonBearWatchface {
       high: 180,
       updated: 0,
       configured: false,
+      fullScreen: false,
       error: null,
       battery: 100,
     };
@@ -274,48 +275,11 @@ class CrimsonBearWatchface {
     );
   }
 
-  face() {
-    const { width, height } = this.render;
-    const footerHeight = 30;
-    const headerHeight = Math.round(height * 0.54);
-    const now = new Date();
-    if (!this.state.configured) {
-      this.setupScreen(width, height);
-      return;
-    }
-
+  footer(width, height, footerHeight, now) {
     const clock = `${String(now.getHours()).padStart(2, "0")}:${String(
       now.getMinutes()
     ).padStart(2, "0")}`;
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const age = this.state.updated
-      ? Math.max(0, Math.round((Date.now() - this.state.updated) / 60000))
-      : null;
-    const radius = Math.min(58, Math.round(headerHeight * 0.47));
-    const cx = Math.round(width * 0.48);
-    const cy = Math.round(headerHeight / 2);
-    this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
-    this.bearBackdrop(cx, cy, radius);
-    this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
-    this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
-    this.render.drawCircle(this.colors.white, cx, cy, radius - 2, 0, 360);
-
-    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
-    const ageText = age == null ? "--m" : `${age}m`;
-    const delta = this.deltaText();
-    this.drawGlucose(cx, cy - 45);
-    this.text(
-      `${unit}  ${ageText}`,
-      this.fonts.label,
-      age != null && age > 10 ? this.colors.low : this.colors.ink,
-      cx,
-      cy - 3,
-      true
-    );
-    this.text(delta, this.fonts.delta, this.colors.ink, cx, cy + 19, true);
-    this.arrow(width - 27, cy, this.state.direction, this.colors.crimson);
-
-    this.graph(0, headerHeight, width, height - headerHeight - footerHeight);
     this.render.fillRectangle(
       this.colors.ink,
       0,
@@ -346,6 +310,83 @@ class CrimsonBearWatchface {
       width - 5 - this.render.getTextWidth(battery, this.fonts.label),
       height - footerHeight + 5
     );
+  }
+
+  fullScreenFace(width, height, footerHeight, now, age) {
+    const contentHeight = height - footerHeight;
+    const cx = width >> 1;
+    const cy = contentHeight >> 1;
+    const radius = Math.min((width >> 1) - 9, (contentHeight >> 1) - 7);
+    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
+    const ageText = age == null ? "--m" : `${age}m`;
+
+    this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    this.bearBackdrop(cx, cy, radius);
+    this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
+    this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
+    this.render.drawCircle(this.colors.white, cx, cy, radius - 3, 0, 360);
+    this.drawGlucose(cx, cy - 48);
+    this.text(
+      `${unit}  ${ageText}`,
+      this.fonts.label,
+      age != null && age > 10 ? this.colors.low : this.colors.ink,
+      cx,
+      cy - 6,
+      true
+    );
+    this.text(this.deltaText(), this.fonts.delta, this.colors.ink, cx, cy + 17, true);
+    this.arrow(
+      cx + Math.round(radius * 0.58),
+      cy,
+      this.state.direction,
+      this.colors.crimson
+    );
+    this.footer(width, height, footerHeight, now);
+  }
+
+  face() {
+    const { width, height } = this.render;
+    const footerHeight = 30;
+    const headerHeight = Math.round(height * 0.54);
+    const now = new Date();
+    if (!this.state.configured) {
+      this.setupScreen(width, height);
+      return;
+    }
+
+    const age = this.state.updated
+      ? Math.max(0, Math.round((Date.now() - this.state.updated) / 60000))
+      : null;
+    if (this.state.fullScreen) {
+      this.fullScreenFace(width, height, footerHeight, now, age);
+      return;
+    }
+    const radius = Math.min(58, Math.round(headerHeight * 0.47));
+    const cx = Math.round(width * 0.48);
+    const cy = Math.round(headerHeight / 2);
+    this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    this.bearBackdrop(cx, cy, radius);
+    this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
+    this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
+    this.render.drawCircle(this.colors.white, cx, cy, radius - 2, 0, 360);
+
+    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
+    const ageText = age == null ? "--m" : `${age}m`;
+    const delta = this.deltaText();
+    this.drawGlucose(cx, cy - 45);
+    this.text(
+      `${unit}  ${ageText}`,
+      this.fonts.label,
+      age != null && age > 10 ? this.colors.low : this.colors.ink,
+      cx,
+      cy - 3,
+      true
+    );
+    this.text(delta, this.fonts.delta, this.colors.ink, cx, cy + 19, true);
+    this.arrow(width - 27, cy, this.state.direction, this.colors.crimson);
+
+    this.graph(0, headerHeight, width, height - headerHeight - footerHeight);
+    this.footer(width, height, footerHeight, now);
   }
 
   draw() {
