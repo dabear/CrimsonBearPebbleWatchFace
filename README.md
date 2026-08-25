@@ -24,7 +24,9 @@ Older platforms are deliberately excluded. The layout uses the unobstructed scre
 ## Data sources
 
 - Nightscout: enter the site root URL and, for protected sites, an access token/API secret.
-- mg/dL and mmol/L display modes, with configurable low/high thresholds.
+- mg/dL and mmol/L display modes, with configurable urgent-low, low, and high
+  thresholds. Vibration alarms have independent low/high snooze intervals, alarm
+  immediately when severity escalates, and can be disabled in settings.
 
 Credentials remain in the Pebble phone companion's local storage and are sent only to the selected CGM service. This watchface is informational and must not be used to make treatment decisions.
 

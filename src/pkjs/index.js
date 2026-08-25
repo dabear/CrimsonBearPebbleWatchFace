@@ -12,8 +12,12 @@ class SettingsStore {
         token: saved.token || "",
         units: saved.units || "mg/dL",
         // Thresholds are always persisted canonically as mg/dL.
+        urgentLow: String(saved.urgentLow || 55),
         low: String(saved.low || 70),
         high: String(saved.high || 180),
+        alarmEnabled: saved.alarmEnabled !== false,
+        lowSnooze: String(saved.lowSnooze || 15),
+        highSnooze: String(saved.highSnooze || 30),
         fullScreen: Boolean(saved.fullScreen),
       };
       this.save(clean);
@@ -65,8 +69,12 @@ class NightscoutClient {
       direction: latest.direction || this.direction(delta),
       readings: valid.slice(-12).map((entry) => rounded(Number(entry.sgv))),
       units: mmol ? "mmol/L" : "mg/dL",
+      urgentLow: rounded(Number(this.settings.urgentLow || 55)),
       low: rounded(Number(this.settings.low || 70)),
       high: rounded(Number(this.settings.high || 180)),
+      alarmEnabled: this.settings.alarmEnabled !== false,
+      lowSnooze: Math.max(5, Number(this.settings.lowSnooze) || 15),
+      highSnooze: Math.max(5, Number(this.settings.highSnooze) || 30),
       updated: Number(latest.date || Date.now()),
       fullScreen: Boolean(this.settings.fullScreen),
     };
@@ -182,8 +190,12 @@ input,select,button{box-sizing:border-box;width:100%;font:inherit;padding:10px}
 <label>Nightscout URL</label><input name="endpoint" type="url" placeholder="https://my-site.example">
 <label>Nightscout token / API secret</label><input name="token">
 <label>Units</label><select name="units"><option>mg/dL</option><option>mmol/L</option></select>
+<label id="urgentLowLabel">Urgent-low threshold</label><div class="stepper"><button type="button" data-field="urgentLow" data-direction="-1" aria-label="Decrease urgent-low threshold">−</button><input name="urgentLow" type="number"><button type="button" data-field="urgentLow" data-direction="1" aria-label="Increase urgent-low threshold">+</button></div>
 <label id="lowLabel">Low threshold</label><div class="stepper"><button type="button" data-field="low" data-direction="-1" aria-label="Decrease low threshold">−</button><input name="low" type="number"><button type="button" data-field="low" data-direction="1" aria-label="Increase low threshold">+</button></div>
 <label id="highLabel">High threshold</label><div class="stepper"><button type="button" data-field="high" data-direction="-1" aria-label="Decrease high threshold">−</button><input name="high" type="number"><button type="button" data-field="high" data-direction="1" aria-label="Increase high threshold">+</button></div>
+<label class="toggle"><input name="alarmEnabled" type="checkbox">Glucose vibration alarms</label>
+<label>Low alarm snooze (minutes)</label><input name="lowSnooze" type="number" min="5" max="240" step="5">
+<label>High alarm snooze (minutes)</label><input name="highSnooze" type="number" min="5" max="240" step="5">
 <label class="toggle"><input name="fullScreen" type="checkbox">Full-screen glucose ring (hide trend graph)</label>
 <button class="save">Save</button>
 </form>
@@ -192,12 +204,13 @@ const s=JSON.parse(decodeURIComponent("${values}"));
 const f=document.getElementById("f");
 Object.keys(s).forEach((k)=>{if(f[k])f[k].value=s[k]});
 f.fullScreen.checked=Boolean(s.fullScreen);
+f.alarmEnabled.checked=s.alarmEnabled!==false;
 let previousUnit="mg/dL";
-const updateThresholds=(unit)=>{const toMmol=unit==="mmol/L"&&previousUnit==="mg/dL";const toMg=unit==="mg/dL"&&previousUnit==="mmol/L";if(toMmol){f.low.value=(Number(f.low.value)/18).toFixed(1);f.high.value=(Number(f.high.value)/18).toFixed(1)}else if(toMg){f.low.value=Math.round(Number(f.low.value)*18);f.high.value=Math.round(Number(f.high.value)*18)}const mmol=unit==="mmol/L";f.low.step=mmol?"0.1":"1";f.high.step=mmol?"0.1":"1";f.low.min=mmol?"1.0":"18";f.high.min=mmol?"1.0":"18";document.getElementById("lowLabel").textContent="Low threshold ("+unit+")";document.getElementById("highLabel").textContent="High threshold ("+unit+")";previousUnit=unit};
+const updateThresholds=(unit)=>{const fields=["urgentLow","low","high"];const toMmol=unit==="mmol/L"&&previousUnit==="mg/dL";const toMg=unit==="mg/dL"&&previousUnit==="mmol/L";fields.forEach((field)=>{if(toMmol)f[field].value=(Number(f[field].value)/18).toFixed(1);else if(toMg)f[field].value=Math.round(Number(f[field].value)*18);const mmol=unit==="mmol/L";f[field].step=mmol?"0.1":"1";f[field].min=mmol?"1.0":"18"});document.getElementById("urgentLowLabel").textContent="Urgent-low threshold ("+unit+")";document.getElementById("lowLabel").textContent="Low threshold ("+unit+")";document.getElementById("highLabel").textContent="High threshold ("+unit+")";previousUnit=unit};
 document.querySelectorAll(".stepper button").forEach((button)=>{button.onclick=()=>{const input=f[button.dataset.field];const step=Number(input.step);const value=Number(input.value)||0;const next=Math.max(Number(input.min),value+Number(button.dataset.direction)*step);input.value=f.units.value==="mmol/L"?next.toFixed(1):String(Math.round(next))}});
 updateThresholds(f.units.value);
 f.units.onchange=()=>updateThresholds(f.units.value);
-f.onsubmit=(e)=>{e.preventDefault();const o={};new FormData(f).forEach((v,k)=>{o[k]=v});o.fullScreen=f.fullScreen.checked;if(o.units==="mmol/L"){o.low=String(Math.round(Number(o.low)*18));o.high=String(Math.round(Number(o.high)*18))}location="pebblejs://close#"+encodeURIComponent(JSON.stringify(o))};
+f.onsubmit=(e)=>{e.preventDefault();if(Number(f.urgentLow.value)>=Number(f.low.value)||Number(f.low.value)>=Number(f.high.value)){alert("Thresholds must be ordered: urgent low < low < high");return}const o={};new FormData(f).forEach((v,k)=>{o[k]=v});o.alarmEnabled=f.alarmEnabled.checked;o.fullScreen=f.fullScreen.checked;if(o.units==="mmol/L"){o.urgentLow=String(Math.round(Number(o.urgentLow)*18));o.low=String(Math.round(Number(o.low)*18));o.high=String(Math.round(Number(o.high)*18))}location="pebblejs://close#"+encodeURIComponent(JSON.stringify(o))};
 </script>`;
     return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
   }

@@ -1,5 +1,6 @@
 import Poco from "commodetto/Poco";
 import Message from "pebble/message";
+import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
 
 class CrimsonBearWatchface {
@@ -29,14 +30,20 @@ class CrimsonBearWatchface {
       direction: "NONE",
       readings: [],
       units: "mg/dL",
+      urgentLow: 55,
       low: 70,
       high: 180,
+      alarmEnabled: true,
+      lowSnooze: 15,
+      highSnooze: 30,
       updated: 0,
       configured: false,
       fullScreen: false,
       error: null,
       battery: 100,
     };
+    this.alarmZone = "normal";
+    this.lastAlarmAt = 0;
   }
 
   start() {
@@ -487,11 +494,57 @@ class CrimsonBearWatchface {
     }
   }
 
+  checkGlucoseAlarm() {
+    const glucose = Number(this.state.glucose);
+    const updated = Number(this.state.updated);
+    if (!Number.isFinite(glucose) || !Number.isFinite(updated) || updated <= 0) return;
+
+    // Never produce a glucose alarm from stale data restored after a disconnect.
+    if (Date.now() - updated > 15 * 60 * 1000) return;
+
+    let zone = "normal";
+    if (glucose <= Number(this.state.urgentLow)) zone = "urgentLow";
+    else if (glucose <= Number(this.state.low)) zone = "low";
+    else if (glucose >= Number(this.state.high)) zone = "high";
+
+    if (zone === "normal") {
+      this.alarmZone = zone;
+      this.lastAlarmAt = 0;
+      return;
+    }
+    if (!this.state.alarmEnabled) {
+      this.alarmZone = zone;
+      this.lastAlarmAt = 0;
+      return;
+    }
+
+    const snoozeMinutes =
+      zone === "high" ? this.state.highSnooze : this.state.lowSnooze;
+    const snoozeElapsed =
+      Date.now() - this.lastAlarmAt >= Number(snoozeMinutes) * 60000;
+    const changedZone = zone !== this.alarmZone;
+    if (!changedZone && this.lastAlarmAt && !snoozeElapsed) return;
+
+    this.alarmZone = zone;
+    this.lastAlarmAt = Date.now();
+    if (zone === "urgentLow") {
+      Vibes.longPulse();
+      setTimeout(() => Vibes.longPulse(), 700);
+      setTimeout(() => Vibes.longPulse(), 1400);
+    } else if (zone === "low") {
+      Vibes.longPulse();
+    } else {
+      Vibes.doublePulse();
+    }
+  }
+
   readMessages() {
+    let receivedData = false;
     for (const [key, value] of this.message.read()) {
       if (key === "DATA") {
         try {
           Object.assign(this.state, JSON.parse(value), { error: null });
+          receivedData = true;
         } catch (_) {
           this.state.error = "Bad response";
         }
@@ -501,6 +554,7 @@ class CrimsonBearWatchface {
         this.state.configured = Boolean(value);
       }
     }
+    if (receivedData) this.checkGlucoseAlarm();
     this.draw();
   }
 }
