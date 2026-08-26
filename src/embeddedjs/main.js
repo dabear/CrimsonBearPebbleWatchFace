@@ -436,7 +436,7 @@ class CrimsonBearWatchface {
     this.footer(width, height, footerHeight, now);
   }
 
-  requestRender(priority, delay = 100) {
+  requestRender(priority, delay = 400) {
     this.pendingRender = Math.max(this.pendingRender, priority);
     if (this.renderTimer) return;
     this.renderTimer = setTimeout(() => {
@@ -456,30 +456,35 @@ class CrimsonBearWatchface {
     this.requestRender(3);
   }
 
+  recoverRender(error) {
+    this.renderRetryCount += 1;
+    if (this.renderRetryCount > 5) return;
+    const delay = Math.min(4000, 400 * 2 ** (this.renderRetryCount - 1));
+    console.log(`render retry ${this.renderRetryCount} in ${delay}ms: ${error}`);
+    this.requestRender(3, delay);
+  }
+
   drawNow() {
     let began = false;
     try {
       this.render.begin();
       began = true;
       this.face();
+      began = false;
       this.render.end();
       this.renderRetryCount = 0;
     } catch (error) {
       console.log(`draw failed: ${error}`);
       if (began) {
+        began = false;
         try {
           this.render.end();
         } catch (_) {
           // The failed frame may no longer be active.
         }
       }
-      // A busy display is transient. Queue a retry instead of immediately
-      // beginning another transaction, which can make output_begin failures recur.
-      if (String(error).includes("output_begin")) {
-        this.renderRetryCount += 1;
-        if (this.renderRetryCount <= 5)
-          this.requestRender(3, Math.min(2000, 100 * 2 ** this.renderRetryCount));
-      } else this.fallback();
+      // Never begin a fallback transaction immediately after a display error.
+      this.recoverRender(error);
     }
   }
 
@@ -496,17 +501,20 @@ class CrimsonBearWatchface {
       this.render.begin(0, height - footerHeight, width, footerHeight);
       began = true;
       this.footer(width, height, footerHeight, new Date());
+      began = false;
       this.render.end();
+      this.renderRetryCount = 0;
     } catch (error) {
       console.log(`footer draw failed: ${error}`);
       if (began) {
+        began = false;
         try {
           this.render.end();
         } catch (_) {
           // The failed frame may no longer be active.
         }
       }
-      this.draw();
+      this.recoverRender(error);
     }
   }
 
@@ -544,17 +552,20 @@ class CrimsonBearWatchface {
         this.colors.crimson,
         fullScreen ? 1.25 : 1
       );
+      began = false;
       this.render.end();
+      this.renderRetryCount = 0;
     } catch (error) {
       console.log(`age draw failed: ${error}`);
       if (began) {
+        began = false;
         try {
           this.render.end();
         } catch (_) {
           // The failed frame may no longer be active.
         }
       }
-      this.draw();
+      this.recoverRender(error);
     }
   }
 
