@@ -8,9 +8,16 @@ A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It
 
 [Install CrimsonBear Cgm from the Pebble App Store](https://apps.rePebble.com/ebc3f63147e6481599da4b8e)
 
-<p align="center">
-  <img src="assets/watchface-screenshot.png" alt="CrimsonBear Cgm running on Pebble Time 2" width="200">
-</p>
+<table align="center">
+  <tr>
+    <th>Graph mode</th>
+    <th>Full-screen mode</th>
+  </tr>
+  <tr>
+    <td><img src="assets/emery_graph_screenshot.png" alt="CrimsonBear Cgm graph mode on Pebble Time 2" width="200"></td>
+    <td><img src="assets/emery_fullscreen_screenshot.png" alt="CrimsonBear Cgm full-screen mode on Pebble Time 2" width="200"></td>
+  </tr>
+</table>
 
 On first launch, the watch displays a prominent setup notice directing the user to the watchface settings in the Pebble phone app.
 
