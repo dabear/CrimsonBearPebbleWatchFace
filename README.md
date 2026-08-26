@@ -4,7 +4,7 @@
   <img src="assets/crimsonbear-teddy.png" alt="CrimsonBear teddy logo" width="180">
 </p>
 
-A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It shows current glucose in a circle, trend arrow, delta, a 12-reading graph, date/time, and battery using the current Alloy embedded JavaScript runtime.
+A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It shows current glucose in a circle, bold solid-head trend arrows (including double arrows for rapid changes), delta, a 12-reading graph, date/time, and battery using the current Alloy embedded JavaScript runtime.
 
 [Install CrimsonBear Cgm from the Pebble App Store](https://apps.rePebble.com/ebc3f63147e6481599da4b8e)
 
@@ -63,4 +63,4 @@ Open the watchface settings from the Pebble mobile app to configure a CGM source
 
 ## Development notes
 
-The watch code is in `src/embeddedjs/main.js`; phone networking and configuration are in `src/pkjs/index.js`. The watch requests a refresh at launch, the phone refreshes every five minutes, and the display calculates reading age locally every minute.
+The watch code is in `src/embeddedjs/main.js`; phone networking and configuration are in `src/pkjs/index.js`. The watch requests a refresh at launch, the phone refreshes every five minutes, and the display calculates reading age locally every minute. Minute, battery, and duplicate-data updates use coalesced partial redraws to reduce display work and avoid overlapping Alloy output transactions.

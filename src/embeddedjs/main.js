@@ -107,42 +107,59 @@ class CrimsonBearWatchface {
   }
 
   arrow(cx, cy, direction, color, scale = 1) {
-    const slopes = {
-      DoubleUp: -2,
-      SingleUp: -1.2,
-      FortyFiveUp: -0.5,
-      Flat: 0,
-      FortyFiveDown: 0.5,
-      SingleDown: 1.2,
-      DoubleDown: 2,
+    const glyphs = {
+      DoubleUp: [
+        [-6, 13, -6, -4, -6, -14, 6],
+        [6, 13, 6, -4, 6, -14, 6],
+      ],
+      SingleUp: [[0, 15, 0, -3, 0, -16, 9]],
+      FortyFiveUp: [[-12, 12, 2, -2, 13, -13, 8]],
+      Flat: [[-15, 0, 3, 0, 16, 0, 9]],
+      FortyFiveDown: [[-12, -12, 2, 2, 13, 13, 8]],
+      SingleDown: [[0, -15, 0, 3, 0, 16, 9]],
+      DoubleDown: [
+        [-6, -13, -6, 4, -6, 14, 6],
+        [6, -13, 6, 4, 6, 14, 6],
+      ],
     };
-    const slope = slopes[direction];
-    if (slope === undefined) {
+    const glyph = glyphs[direction];
+    if (!glyph) {
       this.text("?", this.fonts.delta, color, cx, cy - 12, true);
       return;
     }
 
-    const dx = Math.round((Math.abs(slope) > 1.5 ? 6 : 14) * scale);
-    const limit = Math.round(18 * scale);
-    const dy = Math.max(-limit, Math.min(limit, Math.round(dx * slope)));
-    this.render.drawLine(
-      cx - dx,
-      cy - dy,
-      cx + dx,
-      cy + dy,
-      color,
-      Math.round(5 * scale)
-    );
-    for (const offset of [-0.72, 0.72]) {
-      const angle = Math.atan2(dy, dx) + offset;
+    const point = (value) => Math.round(value * scale);
+    const shaftWidth = Math.max(5, point(glyph.length > 1 ? 5 : 7));
+    for (const [sx, sy, bx, by, tx, ty, headRadius] of glyph) {
       this.render.drawLine(
-        cx + dx,
-        cy + dy,
-        Math.round(cx + dx - 11 * scale * Math.cos(angle)),
-        Math.round(cy + dy - 11 * scale * Math.sin(angle)),
+        cx + point(sx),
+        cy + point(sy),
+        cx + point(bx),
+        cy + point(by),
         color,
-        Math.round(4 * scale)
+        shaftWidth
       );
+
+      const vx = tx - bx;
+      const vy = ty - by;
+      const length = Math.sqrt(vx * vx + vy * vy);
+      const px = -vy / length;
+      const py = vx / length;
+      const steps = Math.max(6, point(length));
+      for (let step = 0; step <= steps; step += 1) {
+        const progress = step / steps;
+        const centerX = bx + vx * progress;
+        const centerY = by + vy * progress;
+        const halfWidth = headRadius * (1 - progress);
+        this.render.drawLine(
+          cx + point(centerX - px * halfWidth),
+          cy + point(centerY - py * halfWidth),
+          cx + point(centerX + px * halfWidth),
+          cy + point(centerY + py * halfWidth),
+          color,
+          2
+        );
+      }
     }
   }
 
@@ -376,7 +393,7 @@ class CrimsonBearWatchface {
       true
     );
     this.arrow(
-      cx + Math.round(radius * 0.58),
+      cx + Math.round(radius * 0.67),
       cy,
       this.state.direction,
       this.colors.crimson,
@@ -413,7 +430,7 @@ class CrimsonBearWatchface {
     this.drawGlucose(cx, cy - 45);
     this.drawAgeLabel(cx, cy - 3, this.fonts.label, age);
     this.text(delta, this.fonts.delta, this.colors.ink, cx, cy + 19, true);
-    this.arrow(width - 27, cy, this.state.direction, this.colors.crimson);
+    this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
 
     this.graph(0, headerHeight, width, height - headerHeight - footerHeight);
     this.footer(width, height, footerHeight, now);
@@ -521,7 +538,7 @@ class CrimsonBearWatchface {
       this.render.fillRectangle(this.colors.white, x, y, labelWidth, font.height);
       this.drawAgeLabel(cx, y, font, age);
       this.arrow(
-        fullScreen ? cx + Math.round(radius * 0.58) : width - 27,
+        fullScreen ? cx + Math.round(radius * 0.67) : width - 21,
         cy,
         this.state.direction,
         this.colors.crimson,
