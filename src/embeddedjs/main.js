@@ -44,13 +44,18 @@ class CrimsonBearWatchface {
     };
     this.alarmZone = "normal";
     this.lastAlarmAt = 0;
+    this.lastDataSignature = null;
+    this.lastAgeTextWidth = 0;
+    this.pendingRender = 0;
+    this.renderTimer = null;
+    this.renderRetryCount = 0;
   }
 
   start() {
     this.draw();
     this.startBatteryService();
     this.startMessageService();
-    watch.addEventListener("minutechange", () => this.draw());
+    watch.addEventListener("minutechange", () => this.drawMinute());
     watch.addEventListener("resize", () => this.draw());
   }
 
@@ -330,28 +335,38 @@ class CrimsonBearWatchface {
     );
   }
 
+  readingAge() {
+    return this.state.updated
+      ? Math.max(0, Math.round((Date.now() - this.state.updated) / 60000))
+      : null;
+  }
+
+  drawAgeLabel(cx, y, font, age) {
+    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
+    const value = `${unit}  ${age == null ? "--m" : `${age}m`}`;
+    this.lastAgeTextWidth = this.render.getTextWidth(value, font);
+    this.text(
+      value,
+      font,
+      age != null && age > 10 ? this.colors.low : this.colors.ink,
+      cx,
+      y,
+      true
+    );
+  }
+
   fullScreenFace(width, height, footerHeight, now, age) {
     const contentHeight = height - footerHeight;
     const cx = width >> 1;
     const cy = contentHeight >> 1;
     const radius = Math.min((width >> 1) - 9, (contentHeight >> 1) - 7);
-    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
-    const ageText = age == null ? "--m" : `${age}m`;
-
     this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     this.bearBackdrop(cx, cy, radius);
     this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 3, 0, 360);
     this.drawGlucose(cx, cy - 53, this.fonts.fullGlucose);
-    this.text(
-      `${unit}  ${ageText}`,
-      this.fonts.fullLabel,
-      age != null && age > 10 ? this.colors.low : this.colors.ink,
-      cx,
-      cy - 7,
-      true
-    );
+    this.drawAgeLabel(cx, cy - 7, this.fonts.fullLabel, age);
     this.text(
       this.deltaText(),
       this.fonts.fullDelta,
@@ -380,9 +395,7 @@ class CrimsonBearWatchface {
       return;
     }
 
-    const age = this.state.updated
-      ? Math.max(0, Math.round((Date.now() - this.state.updated) / 60000))
-      : null;
+    const age = this.readingAge();
     if (this.state.fullScreen) {
       this.fullScreenFace(width, height, footerHeight, now, age);
       return;
@@ -396,18 +409,9 @@ class CrimsonBearWatchface {
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 2, 0, 360);
 
-    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
-    const ageText = age == null ? "--m" : `${age}m`;
     const delta = this.deltaText();
     this.drawGlucose(cx, cy - 45);
-    this.text(
-      `${unit}  ${ageText}`,
-      this.fonts.label,
-      age != null && age > 10 ? this.colors.low : this.colors.ink,
-      cx,
-      cy - 3,
-      true
-    );
+    this.drawAgeLabel(cx, cy - 3, this.fonts.label, age);
     this.text(delta, this.fonts.delta, this.colors.ink, cx, cy + 19, true);
     this.arrow(width - 27, cy, this.state.direction, this.colors.crimson);
 
@@ -415,20 +419,131 @@ class CrimsonBearWatchface {
     this.footer(width, height, footerHeight, now);
   }
 
+  requestRender(priority, delay = 100) {
+    this.pendingRender = Math.max(this.pendingRender, priority);
+    if (this.renderTimer) return;
+    this.renderTimer = setTimeout(() => {
+      this.renderTimer = null;
+      const pending = this.pendingRender;
+      this.pendingRender = 0;
+      if (pending === 3) this.drawNow();
+      else if (pending === 2) {
+        this.drawAgeNow();
+        this.drawFooter();
+      } else if (pending === 1) this.drawFooterNow();
+      if (this.pendingRender) this.requestRender(this.pendingRender);
+    }, delay);
+  }
+
   draw() {
+    this.requestRender(3);
+  }
+
+  drawNow() {
+    let began = false;
     try {
       this.render.begin();
+      began = true;
       this.face();
       this.render.end();
+      this.renderRetryCount = 0;
     } catch (error) {
       console.log(`draw failed: ${error}`);
-      try {
-        this.render.end();
-      } catch (_) {
-        // The failed frame may not have started.
+      if (began) {
+        try {
+          this.render.end();
+        } catch (_) {
+          // The failed frame may no longer be active.
+        }
       }
-      this.fallback();
+      // A busy display is transient. Queue a retry instead of immediately
+      // beginning another transaction, which can make output_begin failures recur.
+      if (String(error).includes("output_begin")) {
+        this.renderRetryCount += 1;
+        if (this.renderRetryCount <= 5)
+          this.requestRender(3, Math.min(2000, 100 * 2 ** this.renderRetryCount));
+      } else this.fallback();
     }
+  }
+
+  drawFooter() {
+    this.requestRender(1);
+  }
+
+  drawFooterNow() {
+    if (!this.state.configured) return;
+    const { width, height } = this.render;
+    const footerHeight = 30;
+    let began = false;
+    try {
+      this.render.begin(0, height - footerHeight, width, footerHeight);
+      began = true;
+      this.footer(width, height, footerHeight, new Date());
+      this.render.end();
+    } catch (error) {
+      console.log(`footer draw failed: ${error}`);
+      if (began) {
+        try {
+          this.render.end();
+        } catch (_) {
+          // The failed frame may no longer be active.
+        }
+      }
+      this.draw();
+    }
+  }
+
+  drawAgeNow() {
+    if (!this.state.configured) return;
+    const { width, height } = this.render;
+    const footerHeight = 30;
+    const age = this.readingAge();
+    const fullScreen = this.state.fullScreen;
+    const headerHeight = Math.round(height * 0.54);
+    const contentHeight = height - footerHeight;
+    const cx = fullScreen ? width >> 1 : Math.round(width * 0.48);
+    const cy = fullScreen ? contentHeight >> 1 : Math.round(headerHeight / 2);
+    const radius = fullScreen
+      ? Math.min((width >> 1) - 9, (contentHeight >> 1) - 7)
+      : Math.min(58, Math.round(headerHeight * 0.47));
+    const font = fullScreen ? this.fonts.fullLabel : this.fonts.label;
+    const y = cy + (fullScreen ? -7 : -3);
+    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
+    const value = `${unit}  ${age == null ? "--m" : `${age}m`}`;
+    const widthNow = this.render.getTextWidth(value, font);
+    const labelWidth = Math.max(widthNow, this.lastAgeTextWidth) + 8;
+    const x = Math.round(cx - labelWidth / 2);
+
+    let began = false;
+    try {
+      this.render.begin(x, y, labelWidth, font.height);
+      began = true;
+      this.render.fillRectangle(this.colors.white, x, y, labelWidth, font.height);
+      this.drawAgeLabel(cx, y, font, age);
+      this.arrow(
+        fullScreen ? cx + Math.round(radius * 0.58) : width - 27,
+        cy,
+        this.state.direction,
+        this.colors.crimson,
+        fullScreen ? 1.25 : 1
+      );
+      this.render.end();
+    } catch (error) {
+      console.log(`age draw failed: ${error}`);
+      if (began) {
+        try {
+          this.render.end();
+        } catch (_) {
+          // The failed frame may no longer be active.
+        }
+      }
+      this.draw();
+    }
+  }
+
+  drawMinute() {
+    if (!this.state.configured) return;
+    this.requestRender(2);
   }
 
   fallback() {
@@ -466,11 +581,10 @@ class CrimsonBearWatchface {
     try {
       this.battery = new Battery({
         onSample: () => {
-          this.updateBattery();
-          this.draw();
+          if (this.updateBattery()) this.drawFooter();
         },
       });
-      this.updateBattery();
+      if (this.updateBattery()) this.drawFooter();
     } catch (error) {
       console.log(`battery unavailable: ${error}`);
     }
@@ -478,7 +592,10 @@ class CrimsonBearWatchface {
 
   updateBattery() {
     const sample = this.battery.sample();
-    if (sample && sample.percent != null) this.state.battery = sample.percent;
+    if (!sample || sample.percent == null || sample.percent === this.state.battery)
+      return false;
+    this.state.battery = sample.percent;
+    return true;
   }
 
   startMessageService() {
@@ -540,22 +657,34 @@ class CrimsonBearWatchface {
 
   readMessages() {
     let receivedData = false;
+    let needsFullDraw = false;
     for (const [key, value] of this.message.read()) {
       if (key === "DATA") {
         try {
-          Object.assign(this.state, JSON.parse(value), { error: null });
+          const data = JSON.parse(value);
+          const signature = JSON.stringify(data);
+          needsFullDraw =
+            needsFullDraw ||
+            signature !== this.lastDataSignature ||
+            this.state.error != null;
+          this.lastDataSignature = signature;
+          Object.assign(this.state, data, { error: null });
           receivedData = true;
         } catch (_) {
+          needsFullDraw = needsFullDraw || this.state.error !== "Bad response";
           this.state.error = "Bad response";
         }
       } else if (key === "ERROR") {
+        needsFullDraw = needsFullDraw || this.state.error !== value;
         this.state.error = value;
       } else if (key === "CONFIGURED") {
-        this.state.configured = Boolean(value);
+        const configured = Boolean(value);
+        needsFullDraw = needsFullDraw || this.state.configured !== configured;
+        this.state.configured = configured;
       }
     }
     if (receivedData) this.checkGlucoseAlarm();
-    this.draw();
+    if (needsFullDraw) this.draw();
   }
 }
 
