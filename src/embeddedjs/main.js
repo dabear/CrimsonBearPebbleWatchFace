@@ -49,6 +49,8 @@ class CrimsonBearWatchface {
     this.pendingRender = 0;
     this.renderTimer = null;
     this.renderRetryCount = 0;
+    this.refreshPending = true;
+    this.lastRefreshRequestedAt = 0;
   }
 
   start() {
@@ -444,10 +446,7 @@ class CrimsonBearWatchface {
       const pending = this.pendingRender;
       this.pendingRender = 0;
       if (pending === 3) this.drawNow();
-      else if (pending === 2) {
-        this.drawAgeNow();
-        this.drawFooter();
-      } else if (pending === 1) this.drawFooterNow();
+      else if (pending === 2) this.drawMinuteNow();
       if (this.pendingRender) this.requestRender(this.pendingRender);
     }, delay);
   }
@@ -458,9 +457,9 @@ class CrimsonBearWatchface {
 
   recoverRender(error) {
     this.renderRetryCount += 1;
-    if (this.renderRetryCount > 5) return;
-    const delay = Math.min(4000, 400 * 2 ** (this.renderRetryCount - 1));
-    console.log(`render retry ${this.renderRetryCount} in ${delay}ms: ${error}`);
+    if (this.renderRetryCount > 1) return;
+    const delay = 1000;
+    console.log(`render retry in ${delay}ms: ${error}`);
     this.requestRender(3, delay);
   }
 
@@ -488,38 +487,7 @@ class CrimsonBearWatchface {
     }
   }
 
-  drawFooter() {
-    this.requestRender(1);
-  }
-
-  drawFooterNow() {
-    if (!this.state.configured) return;
-    const { width, height } = this.render;
-    const footerHeight = 30;
-    let began = false;
-    try {
-      this.render.begin(0, height - footerHeight, width, footerHeight);
-      began = true;
-      this.footer(width, height, footerHeight, new Date());
-      began = false;
-      this.render.end();
-      this.renderRetryCount = 0;
-    } catch (error) {
-      console.log(`footer draw failed: ${error}`);
-      if (began) {
-        began = false;
-        try {
-          this.render.end();
-        } catch (_) {
-          // The failed frame may no longer be active.
-        }
-      }
-      this.recoverRender(error);
-    }
-  }
-
-  drawAgeNow() {
-    if (!this.state.configured) return;
+  drawAgeContents() {
     const { width, height } = this.render;
     const footerHeight = 30;
     const age = this.readingAge();
@@ -528,9 +496,6 @@ class CrimsonBearWatchface {
     const contentHeight = height - footerHeight;
     const cx = fullScreen ? width >> 1 : Math.round(width * 0.48);
     const cy = fullScreen ? contentHeight >> 1 : Math.round(headerHeight / 2);
-    const radius = fullScreen
-      ? Math.min((width >> 1) - 9, (contentHeight >> 1) - 7)
-      : Math.min(58, Math.round(headerHeight * 0.47));
     const font = fullScreen ? this.fonts.fullLabel : this.fonts.label;
     const y = cy + (fullScreen ? -7 : -3);
     const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
@@ -539,24 +504,34 @@ class CrimsonBearWatchface {
     const labelWidth = Math.max(widthNow, this.lastAgeTextWidth) + 8;
     const x = Math.round(cx - labelWidth / 2);
 
+    this.render.fillRectangle(this.colors.white, x, y, labelWidth, font.height);
+    this.drawAgeLabel(cx, y, font, age);
+  }
+
+  drawMinute() {
+    if (!this.state.configured) return;
+    this.updateBattery();
+    if (Date.now() - this.lastRefreshRequestedAt >= 5 * 60 * 1000)
+      this.requestDataRefresh();
+    this.requestRender(2);
+  }
+
+  drawMinuteNow() {
+    if (!this.state.configured) return;
     let began = false;
     try {
-      this.render.begin(x, y, labelWidth, font.height);
+      // Keep the age and clock changes in one display transaction. The drawing
+      // helpers only touch their own backgrounds, so the rest of the face stays
+      // unchanged.
+      this.render.begin();
       began = true;
-      this.render.fillRectangle(this.colors.white, x, y, labelWidth, font.height);
-      this.drawAgeLabel(cx, y, font, age);
-      this.arrow(
-        fullScreen ? cx + Math.round(radius * 0.67) : width - 21,
-        cy,
-        this.state.direction,
-        this.colors.crimson,
-        fullScreen ? 1.25 : 1
-      );
+      this.drawAgeContents();
+      this.footer(this.render.width, this.render.height, 30, new Date());
       began = false;
       this.render.end();
       this.renderRetryCount = 0;
     } catch (error) {
-      console.log(`age draw failed: ${error}`);
+      console.log(`minute draw failed: ${error}`);
       if (began) {
         began = false;
         try {
@@ -567,11 +542,6 @@ class CrimsonBearWatchface {
       }
       this.recoverRender(error);
     }
-  }
-
-  drawMinute() {
-    if (!this.state.configured) return;
-    this.requestRender(2);
   }
 
   fallback() {
@@ -607,12 +577,10 @@ class CrimsonBearWatchface {
 
   startBatteryService() {
     try {
-      this.battery = new Battery({
-        onSample: () => {
-          if (this.updateBattery()) this.drawFooter();
-        },
-      });
-      if (this.updateBattery()) this.drawFooter();
+      // Sample on the existing minute wake-up rather than keeping a battery
+      // service callback subscribed for the lifetime of the watchface.
+      this.battery = new Battery({});
+      this.updateBattery();
     } catch (error) {
       console.log(`battery unavailable: ${error}`);
     }
@@ -631,11 +599,29 @@ class CrimsonBearWatchface {
       this.message = new Message({
         keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED"],
         onReadable: () => this.readMessages(),
-        onWritable: () => this.message.write(new Map([["COMMAND", "refresh"]])),
+        onWritable: () => this.flushDataRefresh(),
       });
       console.log("message service ready");
     } catch (error) {
       console.log(`message service failed: ${error}`);
+    }
+  }
+
+  requestDataRefresh() {
+    this.refreshPending = true;
+    this.flushDataRefresh();
+  }
+
+  flushDataRefresh() {
+    if (!this.refreshPending || !this.message) return;
+    try {
+      this.message.write(new Map([["COMMAND", "refresh"]]));
+      this.refreshPending = false;
+      this.lastRefreshRequestedAt = Date.now();
+    } catch (error) {
+      // Keep the request pending. onWritable will retry it when the outbox is
+      // actually available, without starting a continuous refresh loop.
+      console.log(`refresh deferred: ${error}`);
     }
   }
 
