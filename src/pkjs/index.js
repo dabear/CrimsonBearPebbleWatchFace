@@ -125,6 +125,13 @@ class DiagnosticStore {
       "minuteEventLateMaxMs",
       "refreshResponseP50Ms",
       "refreshResponseP95Ms",
+      "staleTransitions",
+      "staleAlarms",
+      "staleAgeMaxMs",
+      "phoneDisconnects",
+      "phoneDisconnectedMs",
+      "phoneDisconnectedMaxMs",
+      "phoneDisconnected",
     ];
     const snapshot = {};
     names.forEach((name, index) => {
@@ -178,7 +185,7 @@ class DiagnosticStore {
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.8",
+        version: "2.2.9",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,

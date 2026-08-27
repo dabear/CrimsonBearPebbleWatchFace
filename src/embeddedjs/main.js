@@ -47,6 +47,7 @@ class CrimsonBearWatchface {
     };
     this.alarmZone = "normal";
     this.lastAlarmAt = 0;
+    this.stale = false;
     this.lastDataSignature = null;
     this.lastAgeTextWidth = 0;
     this.pendingRender = 0;
@@ -55,6 +56,8 @@ class CrimsonBearWatchface {
     this.refreshPending = true;
     this.lastRefreshRequestedAt = 0;
     this.refreshStartedAt = 0;
+    this.phoneConnected = true;
+    this.phoneDisconnectedAt = 0;
     this.telemetryPending = false;
     this.lastTelemetrySentAt = Date.now();
     this.lastMinuteEventAt = 0;
@@ -67,6 +70,15 @@ class CrimsonBearWatchface {
     this.draw();
     this.startBatteryService();
     this.startMessageService();
+    watch.addEventListener("connected", (event) => {
+      const connected =
+        typeof event === "boolean"
+          ? event
+          : event && typeof event.connected === "boolean"
+            ? event.connected
+            : true;
+      this.setPhoneConnected(connected);
+    });
     watch.addEventListener("minutechange", () => this.drawMinute());
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
@@ -90,6 +102,7 @@ class CrimsonBearWatchface {
   }
 
   glucoseText() {
+    if (this.stale) return "ERR";
     if (this.state.glucose == null) return "--";
     return this.state.units === "mmol/L"
       ? Number(this.state.glucose).toFixed(1)
@@ -97,6 +110,7 @@ class CrimsonBearWatchface {
   }
 
   deltaText() {
+    if (this.stale) return "";
     if (this.state.delta == null) return "--";
     const value =
       this.state.units === "mmol/L"
@@ -125,6 +139,12 @@ class CrimsonBearWatchface {
       urgentLowAlarms: 0,
       lowAlarms: 0,
       highAlarms: 0,
+      staleTransitions: 0,
+      staleAlarms: 0,
+      staleAgeMaxMs: 0,
+      phoneDisconnects: 0,
+      phoneDisconnectedMs: 0,
+      phoneDisconnectedMaxMs: 0,
       incomingMessages: 0,
       incomingBytes: 0,
       outgoingMessages: 0,
@@ -169,6 +189,9 @@ class CrimsonBearWatchface {
   diagnosticsSnapshot() {
     this.ensureDiagnosticsWindow();
     const d = this.diagnostics;
+    const activeDisconnectMs = this.phoneDisconnectedAt
+      ? Math.max(0, Date.now() - this.phoneDisconnectedAt)
+      : 0;
     return [
       1,
       Date.now(),
@@ -202,6 +225,13 @@ class CrimsonBearWatchface {
       d.minuteEventLateMaxMs,
       this.percentile(d.refreshResponseLatencyBuckets, 0.5),
       this.percentile(d.refreshResponseLatencyBuckets, 0.95),
+      d.staleTransitions,
+      d.staleAlarms,
+      d.staleAgeMaxMs,
+      d.phoneDisconnects,
+      d.phoneDisconnectedMs + activeDisconnectMs,
+      Math.max(d.phoneDisconnectedMaxMs, activeDisconnectMs),
+      this.phoneConnected ? 0 : 1,
     ];
   }
 
@@ -230,14 +260,15 @@ class CrimsonBearWatchface {
     this.lastMinuteEventAt = 0;
     this.lastTelemetrySentAt = Date.now();
     this.telemetryPending = false;
+    this.phoneDisconnectedAt = this.phoneConnected ? 0 : Date.now();
   }
 
   // Glucose and trend drawing primitives
 
   drawGlucose(cx, y, font = this.fonts.glucose) {
-    const color = this.glucoseColor(this.state.glucose);
+    const color = this.stale ? this.colors.low : this.glucoseColor(this.state.glucose);
     const value = this.glucoseText();
-    if (this.state.units !== "mmol/L" || this.state.glucose == null) {
+    if (this.stale || this.state.units !== "mmol/L" || this.state.glucose == null) {
       this.text(value, font, color, cx, y, true);
       return;
     }
@@ -524,6 +555,54 @@ class CrimsonBearWatchface {
     );
   }
 
+  drawPhoneDisconnectedIndicator(width) {
+    if (this.phoneConnected) return;
+    const x = width - 25;
+    const y = 8;
+    const phoneLeft = x + 4;
+    const phoneRight = x + 16;
+    const phoneTop = y + 2;
+    const phoneBottom = y + 24;
+
+    this.render.fillRectangle(this.colors.pale, x, y, 25, 30);
+    this.render.drawLine(phoneLeft, phoneTop, phoneRight, phoneTop, this.colors.ink, 2);
+    this.render.drawLine(
+      phoneRight,
+      phoneTop,
+      phoneRight,
+      phoneBottom,
+      this.colors.ink,
+      2
+    );
+    this.render.drawLine(
+      phoneRight,
+      phoneBottom,
+      phoneLeft,
+      phoneBottom,
+      this.colors.ink,
+      2
+    );
+    this.render.drawLine(
+      phoneLeft,
+      phoneBottom,
+      phoneLeft,
+      phoneTop,
+      this.colors.ink,
+      2
+    );
+    this.render.drawLine(
+      phoneLeft + 4,
+      phoneTop + 3,
+      phoneRight - 3,
+      phoneTop + 3,
+      this.colors.ink,
+      1
+    );
+    this.render.drawCircle(this.colors.ink, phoneLeft + 6, phoneBottom - 3, 1, 0, 360);
+    this.render.drawLine(x + 1, y + 1, x + 22, y + 28, this.colors.crimson, 3);
+    this.render.drawLine(x + 22, y + 1, x + 1, y + 28, this.colors.crimson, 3);
+  }
+
   // Complete watchface layouts
 
   fullScreenFace(width, height, footerHeight, now, age, drawFooter) {
@@ -546,13 +625,14 @@ class CrimsonBearWatchface {
       cy + 22,
       true
     );
-    this.arrow(
-      cx + Math.round(radius * 0.67),
-      cy,
-      this.state.direction,
-      this.colors.crimson,
-      1.25
-    );
+    if (!this.stale)
+      this.arrow(
+        cx + Math.round(radius * 0.67),
+        cy,
+        this.state.direction,
+        this.colors.crimson,
+        1.25
+      );
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
@@ -569,6 +649,7 @@ class CrimsonBearWatchface {
     const age = this.readingAge();
     if (this.state.fullScreen) {
       this.fullScreenFace(width, height, footerHeight, now, age, drawFooter);
+      this.drawPhoneDisconnectedIndicator(width);
       return;
     }
     const radius = Math.min(58, Math.round(headerHeight * 0.47));
@@ -584,9 +665,11 @@ class CrimsonBearWatchface {
     this.drawGlucose(cx, cy - 45);
     this.drawAgeLabel(cx, cy - 3, this.fonts.label, age);
     this.text(delta, this.fonts.delta, this.colors.ink, cx, cy + 19, true);
-    this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
+    if (!this.stale)
+      this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
 
     this.graph(0, headerHeight, width, height - headerHeight - footerHeight);
+    this.drawPhoneDisconnectedIndicator(width);
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
@@ -707,7 +790,8 @@ class CrimsonBearWatchface {
       now - this.lastRefreshRequestedAt >= 2 * 60 * 1000
     )
       this.requestDataRefresh();
-    this.requestRender(2);
+    const staleChanged = this.updateStaleState(now);
+    this.requestRender(staleChanged ? 3 : 2);
   }
 
   drawMinuteNow() {
@@ -811,6 +895,7 @@ class CrimsonBearWatchface {
         keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS"],
         onReadable: () => this.readMessages(),
         onWritable: () => this.flushOutbound(),
+        onSuspend: () => this.setPhoneConnected(false),
       });
       console.log("message service ready");
     } catch (error) {
@@ -826,6 +911,27 @@ class CrimsonBearWatchface {
   requestDiagnostics() {
     this.telemetryPending = true;
     this.flushOutbound();
+  }
+
+  setPhoneConnected(connected) {
+    if (connected === this.phoneConnected) return;
+    const now = Date.now();
+    this.phoneConnected = connected;
+    if (connected) {
+      const duration = this.phoneDisconnectedAt
+        ? Math.max(0, now - this.phoneDisconnectedAt)
+        : 0;
+      this.addDiagnostic("phoneDisconnectedMs", duration);
+      this.diagnostics.phoneDisconnectedMaxMs = Math.max(
+        this.diagnostics.phoneDisconnectedMaxMs,
+        duration
+      );
+      this.phoneDisconnectedAt = 0;
+    } else {
+      this.phoneDisconnectedAt = now;
+      this.countDiagnostic("phoneDisconnects");
+    }
+    this.draw();
   }
 
   flushOutbound() {
@@ -864,13 +970,35 @@ class CrimsonBearWatchface {
 
   // Glucose alarms
 
+  updateStaleState(now = Date.now()) {
+    const updated = Number(this.state.updated);
+    const age =
+      Number.isFinite(updated) && updated > 0 ? Math.max(0, now - updated) : 0;
+    const stale = age >= 15 * 60 * 1000;
+    if (stale) {
+      this.ensureDiagnosticsWindow();
+      this.diagnostics.staleAgeMaxMs = Math.max(this.diagnostics.staleAgeMaxMs, age);
+    }
+    if (stale === this.stale) return false;
+
+    this.stale = stale;
+    if (stale) {
+      this.countDiagnostic("staleTransitions");
+      if (this.state.alarmEnabled) {
+        this.countDiagnostic("staleAlarms");
+        Vibes.shortPulse();
+      }
+    }
+    return true;
+  }
+
   checkGlucoseAlarm() {
     const glucose = Number(this.state.glucose);
     const updated = Number(this.state.updated);
     if (!Number.isFinite(glucose) || !Number.isFinite(updated) || updated <= 0) return;
 
     // Never produce a glucose alarm from stale data restored after a disconnect.
-    if (Date.now() - updated > 15 * 60 * 1000) return;
+    if (this.stale) return;
 
     let zone = "normal";
     if (glucose <= Number(this.state.urgentLow)) zone = "urgentLow";
@@ -941,6 +1069,7 @@ class CrimsonBearWatchface {
             this.state.error != null;
           this.lastDataSignature = signature;
           Object.assign(this.state, data, { error: null });
+          needsFullDraw = this.updateStaleState() || needsFullDraw;
           receivedData = true;
         } catch (_) {
           needsFullDraw = needsFullDraw || this.state.error !== "Bad response";
