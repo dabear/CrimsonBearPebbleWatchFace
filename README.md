@@ -68,6 +68,31 @@ pebble install build/pebble.pbw --emulator emery
 
 Open the watchface settings from the Pebble mobile app to configure a CGM source. The settings UI is bundled as a self-contained data URL, so it has no hosting dependency.
 
+## Release
+
+Run without arguments to choose build, phone installation, and publication
+interactively:
+
+```sh
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh
+```
+
+Flags run non-interactively and can be combined. For example:
+
+```sh
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --install
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --publish --release-notes "Release notes"
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --install --publish --release-notes "Release notes"
+```
+
+Build and publish actions install locked dependencies and run lint and formatting
+checks. Publishing additionally requires a clean `main`, confirms it contains
+`origin/main`, pushes the exact commit to GitHub, and publishes to the RePebble
+store. Existing store screenshots are preserved. If release notes are omitted in
+flag mode, the latest commit subject is used. `--publish` does not install on a
+phone and does not require `--build`; the Pebble publisher performs its own required
+package build before upload.
+
 ## Development notes
 
 The watch code is in `src/embeddedjs/main.js`; phone networking and configuration are in `src/pkjs/index.js`. The watch requests a refresh at launch, the phone refreshes every five minutes, and the display calculates reading age locally every minute. Minute, battery, and duplicate-data updates use coalesced partial redraws to reduce display work and avoid overlapping Alloy output transactions.

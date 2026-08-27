@@ -1,7 +1,7 @@
 {
   "name": "crimsonbear-cgm",
   "author": "CrimsonBear Cgm contributors",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "private": true,
   "description": "A bear-themed CGM watchface for Pebble Time 2 and newer watches",
   "license": "MIT",
@@ -14,7 +14,8 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint src/**/*.js"
+    "lint": "eslint src/**/*.js",
+    "release": "./scripts/build-release.sh"
   },
   "devDependencies": {
     "eslint": "^8.57.1",

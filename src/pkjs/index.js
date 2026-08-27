@@ -54,6 +54,7 @@ class DiagnosticStore {
         outgoingWatchBytes: 0,
         fetchMs: 0,
         fetchMaxMs: 0,
+        fetchLatencyBuckets: [0, 0, 0, 0, 0, 0, 0, 0],
         duplicatePayloads: 0,
         dataAgeMs: 0,
         dataAgeMaxMs: 0,
@@ -105,12 +106,77 @@ class DiagnosticStore {
 
   addWatch(snapshot) {
     this.rollover();
+    if (Array.isArray(snapshot)) snapshot = this.expandWatchSnapshot(snapshot);
     const previous = this.data.watch[this.data.watch.length - 1];
     if (previous && previous.startupId !== snapshot.startupId)
       this.data.phone.watchRestarts = Number(this.data.phone.watchRestarts || 0) + 1;
     this.data.watch.push(snapshot);
     this.data.watch = this.data.watch.slice(-60);
     this.save();
+  }
+
+  expandWatchSnapshot(values) {
+    const names = [
+      "at",
+      "battery",
+      "startedAt",
+      "startupId",
+      "fullDraws",
+      "fullDrawMs",
+      "fullDrawMaxMs",
+      "minuteDraws",
+      "minuteDrawMs",
+      "minuteDrawMaxMs",
+      "renderFailures",
+      "renderRetries",
+      "dataMessages",
+      "refreshRequests",
+      "refreshDeferred",
+      "urgentLowAlarms",
+      "lowAlarms",
+      "highAlarms",
+      "incomingMessages",
+      "incomingBytes",
+      "outgoingMessages",
+      "outgoingBytes",
+      "refreshResponses",
+      "refreshResponseMs",
+      "refreshResponseMaxMs",
+      "invalidatedPixels",
+      "lateMinuteEvents",
+      "minuteEventLateMs",
+      "minuteEventLateMaxMs",
+      "refreshResponseP50Ms",
+      "refreshResponseP95Ms",
+    ];
+    const snapshot = {};
+    names.forEach((name, index) => {
+      snapshot[name] = Number(values[index + 1] || 0);
+    });
+    return snapshot;
+  }
+
+  recordLatency(name, elapsed) {
+    const limits = [250, 500, 1000, 2000, 5000, 10000, 20000];
+    const key = `${name}LatencyBuckets`;
+    const buckets = this.data.phone[key] || new Array(limits.length + 1).fill(0);
+    let index = limits.findIndex((limit) => elapsed <= limit);
+    if (index < 0) index = limits.length;
+    buckets[index] = Number(buckets[index] || 0) + 1;
+    this.data.phone[key] = buckets;
+  }
+
+  percentile(buckets, percentile) {
+    const values = [250, 500, 1000, 2000, 5000, 10000, 20000, 20000];
+    const total = (buckets || []).reduce((sum, count) => sum + Number(count || 0), 0);
+    if (!total) return 0;
+    const target = Math.ceil(total * percentile);
+    let seen = 0;
+    for (let index = 0; index < values.length; index += 1) {
+      seen += Number(buckets[index] || 0);
+      if (seen >= target) return values[index];
+    }
+    return values[values.length - 1];
   }
 
   export() {
@@ -127,15 +193,21 @@ class DiagnosticStore {
         percentPerHour: Number((lost / hours).toFixed(2)),
       };
     }
+    const phone = Object.assign({}, this.data.phone, {
+      fetchP50Ms: this.percentile(this.data.phone.fetchLatencyBuckets, 0.5),
+      fetchP95Ms: this.percentile(this.data.phone.fetchLatencyBuckets, 0.95),
+    });
+    delete phone.fetchLatencyBuckets;
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.6",
+        version: "2.2.7",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,
       },
-      this.data
+      this.data,
+      { phone }
     );
   }
 }
@@ -228,6 +300,35 @@ class NightscoutClient {
       }
     });
   }
+}
+
+const DIRECTIONS = [
+  "DoubleDown",
+  "SingleDown",
+  "FortyFiveDown",
+  "Flat",
+  "FortyFiveUp",
+  "SingleUp",
+  "DoubleUp",
+];
+
+function compactData(data) {
+  return [
+    1,
+    data.glucose,
+    data.delta,
+    Math.max(0, DIRECTIONS.indexOf(data.direction)),
+    data.readings,
+    data.units === "mmol/L" ? 1 : 0,
+    data.urgentLow,
+    data.low,
+    data.high,
+    data.alarmEnabled ? 1 : 0,
+    data.lowSnooze,
+    data.highSnooze,
+    data.updated,
+    data.fullScreen ? 1 : 0,
+  ];
 }
 
 class CrimsonBearCompanion {
@@ -325,6 +426,7 @@ class CrimsonBearCompanion {
         Number(this.diagnostics.data.phone.fetchMaxMs || 0),
         elapsed
       );
+      this.diagnostics.recordLatency("fetch", elapsed);
       this.diagnostics.increment(error ? "fetchErrors" : "fetchSuccesses");
       if (error) this.diagnostics.event("nightscout-error", error.message);
       if (data) {
@@ -343,7 +445,7 @@ class CrimsonBearCompanion {
       }
       this.lastResponsePayload = error
         ? { CONFIGURED: 1, ERROR: error.message }
-        : { CONFIGURED: 1, DATA: JSON.stringify(data) };
+        : { CONFIGURED: 1, DATA: JSON.stringify(compactData(data)) };
       this.send(this.lastResponsePayload);
     });
   }

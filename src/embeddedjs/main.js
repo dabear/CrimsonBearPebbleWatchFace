@@ -125,6 +125,7 @@ class CrimsonBearWatchface {
       refreshResponses: 0,
       refreshResponseMs: 0,
       refreshResponseMaxMs: 0,
+      refreshResponseLatencyBuckets: [0, 0, 0, 0, 0, 0, 0, 0],
       invalidatedPixels: 0,
       lateMinuteEvents: 0,
       minuteEventLateMs: 0,
@@ -160,10 +161,88 @@ class CrimsonBearWatchface {
 
   diagnosticsSnapshot() {
     this.ensureDiagnosticsWindow();
+    const d = this.diagnostics;
+    return [
+      1,
+      Date.now(),
+      this.state.battery,
+      d.startedAt,
+      d.startupId,
+      d.fullDraws,
+      d.fullDrawMs,
+      d.fullDrawMaxMs,
+      d.minuteDraws,
+      d.minuteDrawMs,
+      d.minuteDrawMaxMs,
+      d.renderFailures,
+      d.renderRetries,
+      d.dataMessages,
+      d.refreshRequests,
+      d.refreshDeferred,
+      d.urgentLowAlarms,
+      d.lowAlarms,
+      d.highAlarms,
+      d.incomingMessages,
+      d.incomingBytes,
+      d.outgoingMessages,
+      d.outgoingBytes,
+      d.refreshResponses,
+      d.refreshResponseMs,
+      d.refreshResponseMaxMs,
+      d.invalidatedPixels,
+      d.lateMinuteEvents,
+      d.minuteEventLateMs,
+      d.minuteEventLateMaxMs,
+      this.percentile(d.refreshResponseLatencyBuckets, 0.5),
+      this.percentile(d.refreshResponseLatencyBuckets, 0.95),
+    ];
+  }
+
+  recordLatency(buckets, elapsed) {
+    const limits = [250, 500, 1000, 2000, 5000, 10000, 20000];
+    let index = limits.findIndex((limit) => elapsed <= limit);
+    if (index < 0) index = limits.length;
+    buckets[index] += 1;
+  }
+
+  percentile(buckets, percentile) {
+    const values = [250, 500, 1000, 2000, 5000, 10000, 20000, 20000];
+    const total = buckets.reduce((sum, count) => sum + count, 0);
+    if (!total) return 0;
+    const target = Math.ceil(total * percentile);
+    let seen = 0;
+    for (let index = 0; index < values.length; index += 1) {
+      seen += buckets[index];
+      if (seen >= target) return values[index];
+    }
+    return values[values.length - 1];
+  }
+
+  expandData(values) {
+    if (!Array.isArray(values)) return values;
+    const directions = [
+      "DoubleDown",
+      "SingleDown",
+      "FortyFiveDown",
+      "Flat",
+      "FortyFiveUp",
+      "SingleUp",
+      "DoubleUp",
+    ];
     return {
-      at: Date.now(),
-      battery: this.state.battery,
-      ...this.diagnostics,
+      glucose: values[1],
+      delta: values[2],
+      direction: directions[values[3]] || "Flat",
+      readings: values[4] || [],
+      units: values[5] ? "mmol/L" : "mg/dL",
+      urgentLow: values[6],
+      low: values[7],
+      high: values[8],
+      alarmEnabled: Boolean(values[9]),
+      lowSnooze: values[10],
+      highSnooze: values[11],
+      updated: values[12],
+      fullScreen: Boolean(values[13]),
     };
   }
 
@@ -819,10 +898,10 @@ class CrimsonBearWatchface {
       setTimeout(() => Vibes.longPulse(), 1400);
     } else if (zone === "low") {
       this.countDiagnostic("lowAlarms");
-      Vibes.longPulse();
+      Vibes.doublePulse();
     } else {
       this.countDiagnostic("highAlarms");
-      Vibes.doublePulse();
+      Vibes.shortPulse();
     }
   }
 
@@ -842,10 +921,11 @@ class CrimsonBearWatchface {
             this.diagnostics.refreshResponseMaxMs,
             elapsed
           );
+          this.recordLatency(this.diagnostics.refreshResponseLatencyBuckets, elapsed);
           this.refreshStartedAt = 0;
         }
         try {
-          const data = JSON.parse(value);
+          const data = this.expandData(JSON.parse(value));
           const signature = JSON.stringify(data);
           needsFullDraw =
             needsFullDraw ||
