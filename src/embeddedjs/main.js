@@ -4,6 +4,16 @@ import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
 import { expandData } from "protocol";
 
+function vibe() {
+  const p = [300];
+  let n = 8;
+  while (n > 0) {
+    p.push(100, 50, 100, 300);
+    n -= 1;
+  }
+  Vibes.pattern(p);
+}
+
 class CrimsonBearWatchface {
   // Lifecycle and shared state
 
@@ -692,13 +702,12 @@ class CrimsonBearWatchface {
     this.requestRender(3);
   }
 
-  recoverRender(error) {
+  recoverRender(_) {
     this.countDiagnostic("renderFailures");
     this.renderRetryCount += 1;
     if (this.renderRetryCount > 1) return;
     this.countDiagnostic("renderRetries");
     const delay = 1000;
-    console.log(`render retry in ${delay}ms: ${error}`);
     this.requestRender(3, delay);
   }
 
@@ -721,7 +730,6 @@ class CrimsonBearWatchface {
       this.renderRetryCount = 0;
     } catch (error) {
       this.recordDraw("full", startedAt, invalidatedPixels);
-      console.log(`draw failed: ${error}`);
       if (began) {
         began = false;
         try {
@@ -820,7 +828,6 @@ class CrimsonBearWatchface {
       this.renderRetryCount = 0;
     } catch (error) {
       this.recordDraw("minute", startedAt, invalidatedPixels);
-      console.log(`minute draw failed: ${error}`);
       if (began) {
         began = false;
         try {
@@ -874,8 +881,8 @@ class CrimsonBearWatchface {
       // service callback subscribed for the lifetime of the watchface.
       this.battery = new Battery({});
       this.updateBattery();
-    } catch (error) {
-      console.log(`battery unavailable: ${error}`);
+    } catch (_) {
+      // Battery data is optional.
     }
   }
 
@@ -897,9 +904,8 @@ class CrimsonBearWatchface {
         onWritable: () => this.flushOutbound(),
         onSuspend: () => this.setPhoneConnected(false),
       });
-      console.log("message service ready");
-    } catch (error) {
-      console.log(`message service failed: ${error}`);
+    } catch (_) {
+      // The service remains unavailable until the watchface restarts.
     }
   }
 
@@ -960,11 +966,10 @@ class CrimsonBearWatchface {
         this.telemetryPending = false;
         this.lastTelemetrySentAt = Date.now();
       }
-    } catch (error) {
+    } catch (_) {
       // Keep the request pending. onWritable will retry it when the outbox is
       // actually available, without starting a continuous refresh loop.
       this.countDiagnostic("refreshDeferred");
-      console.log(`outbound deferred: ${error}`);
     }
   }
 
@@ -1025,18 +1030,14 @@ class CrimsonBearWatchface {
 
     this.alarmZone = zone;
     this.lastAlarmAt = Date.now();
-    if (zone === "urgentLow") {
-      this.countDiagnostic("urgentLowAlarms");
-      Vibes.longPulse();
-      setTimeout(() => Vibes.longPulse(), 700);
-      setTimeout(() => Vibes.longPulse(), 1400);
-    } else if (zone === "low") {
-      this.countDiagnostic("lowAlarms");
-      Vibes.doublePulse();
-    } else {
-      this.countDiagnostic("highAlarms");
-      Vibes.shortPulse();
-    }
+    this.countDiagnostic(
+      zone === "urgentLow"
+        ? "urgentLowAlarms"
+        : zone === "low"
+          ? "lowAlarms"
+          : "highAlarms"
+    );
+    vibe();
   }
 
   // Phone-to-watch messaging
