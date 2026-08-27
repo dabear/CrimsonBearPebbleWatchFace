@@ -51,6 +51,13 @@ class CrimsonBearWatchface {
     this.renderRetryCount = 0;
     this.refreshPending = true;
     this.lastRefreshRequestedAt = 0;
+    this.refreshStartedAt = 0;
+    this.telemetryPending = false;
+    this.lastTelemetrySentAt = Date.now();
+    this.lastMinuteEventAt = 0;
+    this.startupId = Date.now();
+    this.diagnostics = this.newDiagnostics();
+    this.hasRenderedConfiguredFace = false;
   }
 
   start() {
@@ -58,7 +65,10 @@ class CrimsonBearWatchface {
     this.startBatteryService();
     this.startMessageService();
     watch.addEventListener("minutechange", () => this.drawMinute());
-    watch.addEventListener("resize", () => this.draw());
+    watch.addEventListener("resize", () => {
+      this.hasRenderedConfiguredFace = false;
+      this.draw();
+    });
   }
 
   text(value, font, color, x, y, centered = false) {
@@ -88,6 +98,80 @@ class CrimsonBearWatchface {
         ? Number(this.state.delta).toFixed(1)
         : String(this.state.delta);
     return `${this.state.delta > 0 ? "+" : ""}${value}`;
+  }
+
+  newDiagnostics() {
+    return {
+      startedAt: Date.now(),
+      startupId: this.startupId,
+      fullDraws: 0,
+      fullDrawMs: 0,
+      fullDrawMaxMs: 0,
+      minuteDraws: 0,
+      minuteDrawMs: 0,
+      minuteDrawMaxMs: 0,
+      renderFailures: 0,
+      renderRetries: 0,
+      dataMessages: 0,
+      refreshRequests: 0,
+      refreshDeferred: 0,
+      urgentLowAlarms: 0,
+      lowAlarms: 0,
+      highAlarms: 0,
+      incomingMessages: 0,
+      incomingBytes: 0,
+      outgoingMessages: 0,
+      outgoingBytes: 0,
+      refreshResponses: 0,
+      refreshResponseMs: 0,
+      refreshResponseMaxMs: 0,
+      invalidatedPixels: 0,
+      lateMinuteEvents: 0,
+      minuteEventLateMs: 0,
+      minuteEventLateMaxMs: 0,
+    };
+  }
+
+  ensureDiagnosticsWindow() {
+    if (Date.now() - this.diagnostics.startedAt >= 48 * 60 * 60 * 1000)
+      this.diagnostics = this.newDiagnostics();
+  }
+
+  countDiagnostic(name) {
+    this.addDiagnostic(name, 1);
+  }
+
+  addDiagnostic(name, amount) {
+    this.ensureDiagnosticsWindow();
+    this.diagnostics[name] = Number(this.diagnostics[name] || 0) + amount;
+  }
+
+  recordDraw(type, startedAt, invalidatedPixels) {
+    this.ensureDiagnosticsWindow();
+    const elapsed = Math.max(0, Date.now() - startedAt);
+    const countKey = `${type}Draws`;
+    const totalKey = `${type}DrawMs`;
+    const maxKey = `${type}DrawMaxMs`;
+    this.diagnostics[countKey] += 1;
+    this.diagnostics[totalKey] += elapsed;
+    this.diagnostics[maxKey] = Math.max(this.diagnostics[maxKey], elapsed);
+    this.diagnostics.invalidatedPixels += invalidatedPixels;
+  }
+
+  diagnosticsSnapshot() {
+    this.ensureDiagnosticsWindow();
+    return {
+      at: Date.now(),
+      battery: this.state.battery,
+      ...this.diagnostics,
+    };
+  }
+
+  resetDiagnostics() {
+    this.diagnostics = this.newDiagnostics();
+    this.lastMinuteEventAt = 0;
+    this.lastTelemetrySentAt = Date.now();
+    this.telemetryPending = false;
   }
 
   drawGlucose(cx, y, font = this.fonts.glucose) {
@@ -374,7 +458,7 @@ class CrimsonBearWatchface {
     );
   }
 
-  fullScreenFace(width, height, footerHeight, now, age) {
+  fullScreenFace(width, height, footerHeight, now, age, drawFooter) {
     const contentHeight = height - footerHeight;
     const cx = width >> 1;
     const cy = contentHeight >> 1;
@@ -401,10 +485,10 @@ class CrimsonBearWatchface {
       this.colors.crimson,
       1.25
     );
-    this.footer(width, height, footerHeight, now);
+    if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
-  face() {
+  face(drawFooter = true) {
     const { width, height } = this.render;
     const footerHeight = 30;
     const headerHeight = Math.round(height * 0.54);
@@ -416,7 +500,7 @@ class CrimsonBearWatchface {
 
     const age = this.readingAge();
     if (this.state.fullScreen) {
-      this.fullScreenFace(width, height, footerHeight, now, age);
+      this.fullScreenFace(width, height, footerHeight, now, age, drawFooter);
       return;
     }
     const radius = Math.min(58, Math.round(headerHeight * 0.47));
@@ -435,7 +519,7 @@ class CrimsonBearWatchface {
     this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
 
     this.graph(0, headerHeight, width, height - headerHeight - footerHeight);
-    this.footer(width, height, footerHeight, now);
+    if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
   requestRender(priority, delay = 400) {
@@ -456,23 +540,34 @@ class CrimsonBearWatchface {
   }
 
   recoverRender(error) {
+    this.countDiagnostic("renderFailures");
     this.renderRetryCount += 1;
     if (this.renderRetryCount > 1) return;
+    this.countDiagnostic("renderRetries");
     const delay = 1000;
     console.log(`render retry in ${delay}ms: ${error}`);
     this.requestRender(3, delay);
   }
 
   drawNow() {
+    const startedAt = Date.now();
+    const contentOnly = this.state.configured && this.hasRenderedConfiguredFace;
+    const invalidatedPixels =
+      this.render.width * (contentOnly ? this.render.height - 30 : this.render.height);
     let began = false;
     try {
-      this.render.begin();
+      if (contentOnly)
+        this.render.begin(0, 0, this.render.width, this.render.height - 30);
+      else this.render.begin();
       began = true;
-      this.face();
+      this.face(!contentOnly);
       began = false;
       this.render.end();
+      this.hasRenderedConfiguredFace = this.state.configured;
+      this.recordDraw("full", startedAt, invalidatedPixels);
       this.renderRetryCount = 0;
     } catch (error) {
+      this.recordDraw("full", startedAt, invalidatedPixels);
       console.log(`draw failed: ${error}`);
       if (began) {
         began = false;
@@ -487,7 +582,7 @@ class CrimsonBearWatchface {
     }
   }
 
-  drawAgeContents() {
+  ageLayout() {
     const { width, height } = this.render;
     const footerHeight = 30;
     const age = this.readingAge();
@@ -504,33 +599,66 @@ class CrimsonBearWatchface {
     const labelWidth = Math.max(widthNow, this.lastAgeTextWidth) + 8;
     const x = Math.round(cx - labelWidth / 2);
 
-    this.render.fillRectangle(this.colors.white, x, y, labelWidth, font.height);
-    this.drawAgeLabel(cx, y, font, age);
+    return { x, y, width: labelWidth, height: font.height, cx, font, age };
+  }
+
+  drawAgeContents(layout) {
+    this.render.fillRectangle(
+      this.colors.white,
+      layout.x,
+      layout.y,
+      layout.width,
+      layout.height
+    );
+    this.drawAgeLabel(layout.cx, layout.y, layout.font, layout.age);
   }
 
   drawMinute() {
     if (!this.state.configured) return;
+    const now = Date.now();
+    this.ensureDiagnosticsWindow();
+    if (this.lastMinuteEventAt) {
+      const late = Math.max(0, now - this.lastMinuteEventAt - 60000);
+      this.diagnostics.minuteEventLateMs += late;
+      this.diagnostics.minuteEventLateMaxMs = Math.max(
+        this.diagnostics.minuteEventLateMaxMs,
+        late
+      );
+      if (late >= 1000) this.countDiagnostic("lateMinuteEvents");
+    }
+    this.lastMinuteEventAt = now;
     this.updateBattery();
-    if (Date.now() - this.lastRefreshRequestedAt >= 5 * 60 * 1000)
-      this.requestDataRefresh();
+    if (now - this.lastTelemetrySentAt >= 60 * 60 * 1000) this.requestDiagnostics();
+    if (now - this.lastRefreshRequestedAt >= 5 * 60 * 1000) this.requestDataRefresh();
     this.requestRender(2);
   }
 
   drawMinuteNow() {
     if (!this.state.configured) return;
+    const startedAt = Date.now();
+    const age = this.ageLayout();
+    const footerHeight = 30;
+    const footerY = this.render.height - footerHeight;
+    let invalidatedPixels = 0;
     let began = false;
     try {
-      // Keep the age and clock changes in one display transaction. The drawing
-      // helpers only touch their own backgrounds, so the rest of the face stays
-      // unchanged.
-      this.render.begin();
+      this.render.begin(age.x, age.y, age.width, age.height);
       began = true;
-      this.drawAgeContents();
+      invalidatedPixels += age.width * age.height;
+      this.drawAgeContents(age);
+      began = false;
+      this.render.end();
+
+      this.render.begin(0, footerY, this.render.width, footerHeight);
+      began = true;
+      invalidatedPixels += this.render.width * footerHeight;
       this.footer(this.render.width, this.render.height, 30, new Date());
       began = false;
       this.render.end();
+      this.recordDraw("minute", startedAt, invalidatedPixels);
       this.renderRetryCount = 0;
     } catch (error) {
+      this.recordDraw("minute", startedAt, invalidatedPixels);
       console.log(`minute draw failed: ${error}`);
       if (began) {
         began = false;
@@ -597,9 +725,9 @@ class CrimsonBearWatchface {
   startMessageService() {
     try {
       this.message = new Message({
-        keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED"],
+        keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS"],
         onReadable: () => this.readMessages(),
-        onWritable: () => this.flushDataRefresh(),
+        onWritable: () => this.flushOutbound(),
       });
       console.log("message service ready");
     } catch (error) {
@@ -609,19 +737,45 @@ class CrimsonBearWatchface {
 
   requestDataRefresh() {
     this.refreshPending = true;
-    this.flushDataRefresh();
+    this.flushOutbound();
   }
 
-  flushDataRefresh() {
-    if (!this.refreshPending || !this.message) return;
+  requestDiagnostics() {
+    this.telemetryPending = true;
+    this.flushOutbound();
+  }
+
+  flushOutbound() {
+    if ((!this.refreshPending && !this.telemetryPending) || !this.message) return;
+    const values = [];
+    if (this.refreshPending) values.push(["COMMAND", "refresh"]);
+    if (this.telemetryPending)
+      values.push(["DIAGNOSTICS", JSON.stringify(this.diagnosticsSnapshot())]);
     try {
-      this.message.write(new Map([["COMMAND", "refresh"]]));
-      this.refreshPending = false;
-      this.lastRefreshRequestedAt = Date.now();
+      this.message.write(new Map(values));
+      this.countDiagnostic("outgoingMessages");
+      this.addDiagnostic(
+        "outgoingBytes",
+        values.reduce(
+          (total, entry) => total + String(entry[0]).length + String(entry[1]).length,
+          0
+        )
+      );
+      if (this.refreshPending) {
+        this.refreshPending = false;
+        this.lastRefreshRequestedAt = Date.now();
+        this.refreshStartedAt = this.lastRefreshRequestedAt;
+        this.countDiagnostic("refreshRequests");
+      }
+      if (this.telemetryPending) {
+        this.telemetryPending = false;
+        this.lastTelemetrySentAt = Date.now();
+      }
     } catch (error) {
       // Keep the request pending. onWritable will retry it when the outbox is
       // actually available, without starting a continuous refresh loop.
-      console.log(`refresh deferred: ${error}`);
+      this.countDiagnostic("refreshDeferred");
+      console.log(`outbound deferred: ${error}`);
     }
   }
 
@@ -659,12 +813,15 @@ class CrimsonBearWatchface {
     this.alarmZone = zone;
     this.lastAlarmAt = Date.now();
     if (zone === "urgentLow") {
+      this.countDiagnostic("urgentLowAlarms");
       Vibes.longPulse();
       setTimeout(() => Vibes.longPulse(), 700);
       setTimeout(() => Vibes.longPulse(), 1400);
     } else if (zone === "low") {
+      this.countDiagnostic("lowAlarms");
       Vibes.longPulse();
     } else {
+      this.countDiagnostic("highAlarms");
       Vibes.doublePulse();
     }
   }
@@ -672,8 +829,21 @@ class CrimsonBearWatchface {
   readMessages() {
     let receivedData = false;
     let needsFullDraw = false;
+    let incomingBytes = 0;
     for (const [key, value] of this.message.read()) {
+      incomingBytes += String(key).length + String(value).length;
       if (key === "DATA") {
+        this.countDiagnostic("dataMessages");
+        if (this.refreshStartedAt) {
+          const elapsed = Math.max(0, Date.now() - this.refreshStartedAt);
+          this.countDiagnostic("refreshResponses");
+          this.addDiagnostic("refreshResponseMs", elapsed);
+          this.diagnostics.refreshResponseMaxMs = Math.max(
+            this.diagnostics.refreshResponseMaxMs,
+            elapsed
+          );
+          this.refreshStartedAt = 0;
+        }
         try {
           const data = JSON.parse(value);
           const signature = JSON.stringify(data);
@@ -695,8 +865,14 @@ class CrimsonBearWatchface {
         const configured = Boolean(value);
         needsFullDraw = needsFullDraw || this.state.configured !== configured;
         this.state.configured = configured;
+      } else if (key === "COMMAND" && value === "diagnostics") {
+        this.requestDiagnostics();
+      } else if (key === "COMMAND" && value === "diagnostics-reset") {
+        this.resetDiagnostics();
       }
     }
+    this.countDiagnostic("incomingMessages");
+    this.addDiagnostic("incomingBytes", incomingBytes);
     if (receivedData) this.checkGlucoseAlarm();
     if (needsFullDraw) this.draw();
   }

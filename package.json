@@ -1,7 +1,7 @@
 {
   "name": "crimsonbear-cgm",
   "author": "CrimsonBear Cgm contributors",
-  "version": "2.2.2",
+  "version": "2.2.6",
   "private": true,
   "description": "A bear-themed CGM watchface for Pebble Time 2 and newer watches",
   "license": "MIT",
@@ -40,7 +40,8 @@
       "COMMAND",
       "DATA",
       "ERROR",
-      "CONFIGURED"
+      "CONFIGURED",
+      "DIAGNOSTICS"
     ],
     "resources": {
       "media": [
