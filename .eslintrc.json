@@ -11,8 +11,10 @@
   "globals": {
     "Battery": "readonly",
     "Message": "readonly",
+    "module": "readonly",
     "Pebble": "readonly",
     "Poco": "readonly",
+    "require": "readonly",
     "screen": "readonly",
     "watch": "readonly"
   },

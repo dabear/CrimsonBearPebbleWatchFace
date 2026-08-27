@@ -1,36 +1,7 @@
 /* Phone-side Nightscout and configuration bridge for CrimsonBear Cgm. */
-class SettingsStore {
-  constructor(key) {
-    this.key = key;
-  }
-
-  load() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(this.key)) || {};
-      const clean = {
-        endpoint: saved.endpoint || "",
-        token: saved.token || "",
-        units: saved.units || "mg/dL",
-        // Thresholds are always persisted canonically as mg/dL.
-        urgentLow: String(saved.urgentLow || 55),
-        low: String(saved.low || 70),
-        high: String(saved.high || 180),
-        alarmEnabled: saved.alarmEnabled !== false,
-        lowSnooze: String(saved.lowSnooze || 15),
-        highSnooze: String(saved.highSnooze || 30),
-        fullScreen: Boolean(saved.fullScreen),
-      };
-      this.save(clean);
-      return clean;
-    } catch (_) {
-      return {};
-    }
-  }
-
-  save(settings) {
-    localStorage.setItem(this.key, JSON.stringify(settings));
-  }
-}
+const AdaptiveRefreshScheduler = require("./adaptive-refresh-scheduler");
+const compactData = require("./protocol");
+const SettingsStore = require("./settings-store");
 
 class DiagnosticStore {
   constructor(key) {
@@ -58,6 +29,12 @@ class DiagnosticStore {
         duplicatePayloads: 0,
         dataAgeMs: 0,
         dataAgeMaxMs: 0,
+        readingCadenceMs: 0,
+        currentFetchSkewMs: 0,
+        fetchSkewMaxMs: 0,
+        readingAgeAtFetchMs: 0,
+        adaptiveTimerDelayMs: 0,
+        duplicateReadingRetries: 0,
         watchRestarts: 0,
       },
       watch: [],
@@ -201,7 +178,7 @@ class DiagnosticStore {
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.7",
+        version: "2.2.8",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,
@@ -243,6 +220,15 @@ class NightscoutClient {
     const precision = mmol ? 1 : 0;
     const rounded = (value) => Number((value * scale).toFixed(precision));
     const delta = rounded(Number(latest.sgv) - Number(previous.sgv));
+    const recentDates = valid.slice(-8).map((entry) => Number(entry.date));
+    const intervals = recentDates
+      .slice(1)
+      .map((date, index) => date - recentDates[index])
+      .filter((interval) => interval >= 2 * 60000 && interval <= 10 * 60000)
+      .sort((left, right) => left - right);
+    const cadenceMs = intervals.length
+      ? intervals[Math.floor(intervals.length / 2)]
+      : 5 * 60000;
     return {
       glucose: rounded(Number(latest.sgv)),
       delta,
@@ -256,6 +242,7 @@ class NightscoutClient {
       lowSnooze: Math.max(5, Number(this.settings.lowSnooze) || 15),
       highSnooze: Math.max(5, Number(this.settings.highSnooze) || 30),
       updated: Number(latest.date || Date.now()),
+      cadenceMs,
       fullScreen: Boolean(this.settings.fullScreen),
     };
   }
@@ -302,35 +289,6 @@ class NightscoutClient {
   }
 }
 
-const DIRECTIONS = [
-  "DoubleDown",
-  "SingleDown",
-  "FortyFiveDown",
-  "Flat",
-  "FortyFiveUp",
-  "SingleUp",
-  "DoubleUp",
-];
-
-function compactData(data) {
-  return [
-    1,
-    data.glucose,
-    data.delta,
-    Math.max(0, DIRECTIONS.indexOf(data.direction)),
-    data.readings,
-    data.units === "mmol/L" ? 1 : 0,
-    data.urgentLow,
-    data.low,
-    data.high,
-    data.alarmEnabled ? 1 : 0,
-    data.lowSnooze,
-    data.highSnooze,
-    data.updated,
-    data.fullScreen ? 1 : 0,
-  ];
-}
-
 class CrimsonBearCompanion {
   constructor() {
     this.store = new SettingsStore("crimson-cgm-settings-v2");
@@ -341,6 +299,9 @@ class CrimsonBearCompanion {
     this.fetchInFlight = false;
     this.lastFetchStartedAt = 0;
     this.lastResponsePayload = null;
+    this.scheduler = new AdaptiveRefreshScheduler(this.diagnostics, () =>
+      this.refresh("timer")
+    );
   }
 
   start() {
@@ -375,7 +336,6 @@ class CrimsonBearCompanion {
     Pebble.addEventListener("webviewclosed", (event) => {
       this.saveConfiguration(event.response);
     });
-    setInterval(() => this.refresh("timer"), 5 * 60 * 1000);
   }
 
   send(payload) {
@@ -401,7 +361,7 @@ class CrimsonBearCompanion {
   refresh(source = "timer") {
     const now = Date.now();
     if (this.fetchInFlight) return;
-    if (now - this.lastFetchStartedAt < 60 * 1000) {
+    if (source !== "settings" && now - this.lastFetchStartedAt < 60 * 1000) {
       // A watch request still needs a response, but the fallback phone timer
       // can simply reuse the recent fetch on its next interval.
       if (source === "watch" && this.lastResponsePayload)
@@ -412,6 +372,7 @@ class CrimsonBearCompanion {
     if (!this.settings.endpoint) {
       this.diagnostics.increment("fetchErrors");
       this.send({ CONFIGURED: 0, ERROR: "Open phone settings" });
+      this.scheduler.schedule(null, new Error("Not configured"));
       return;
     }
     const startedAt = now;
@@ -447,6 +408,7 @@ class CrimsonBearCompanion {
         ? { CONFIGURED: 1, ERROR: error.message }
         : { CONFIGURED: 1, DATA: JSON.stringify(compactData(data)) };
       this.send(this.lastResponsePayload);
+      this.scheduler.schedule(data, error);
     });
   }
 

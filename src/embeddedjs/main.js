@@ -2,8 +2,11 @@ import Poco from "commodetto/Poco";
 import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
+import { expandData } from "protocol";
 
 class CrimsonBearWatchface {
+  // Lifecycle and shared state
+
   constructor() {
     this.render = new Poco(screen);
     this.fonts = {
@@ -71,6 +74,8 @@ class CrimsonBearWatchface {
     });
   }
 
+  // Value formatting and text primitives
+
   text(value, font, color, x, y, centered = false) {
     const string = String(value);
     const left = centered ? x - (this.render.getTextWidth(string, font) >> 1) : x;
@@ -99,6 +104,8 @@ class CrimsonBearWatchface {
         : String(this.state.delta);
     return `${this.state.delta > 0 ? "+" : ""}${value}`;
   }
+
+  // Runtime diagnostics
 
   newDiagnostics() {
     return {
@@ -218,40 +225,14 @@ class CrimsonBearWatchface {
     return values[values.length - 1];
   }
 
-  expandData(values) {
-    if (!Array.isArray(values)) return values;
-    const directions = [
-      "DoubleDown",
-      "SingleDown",
-      "FortyFiveDown",
-      "Flat",
-      "FortyFiveUp",
-      "SingleUp",
-      "DoubleUp",
-    ];
-    return {
-      glucose: values[1],
-      delta: values[2],
-      direction: directions[values[3]] || "Flat",
-      readings: values[4] || [],
-      units: values[5] ? "mmol/L" : "mg/dL",
-      urgentLow: values[6],
-      low: values[7],
-      high: values[8],
-      alarmEnabled: Boolean(values[9]),
-      lowSnooze: values[10],
-      highSnooze: values[11],
-      updated: values[12],
-      fullScreen: Boolean(values[13]),
-    };
-  }
-
   resetDiagnostics() {
     this.diagnostics = this.newDiagnostics();
     this.lastMinuteEventAt = 0;
     this.lastTelemetrySentAt = Date.now();
     this.telemetryPending = false;
   }
+
+  // Glucose and trend drawing primitives
 
   drawGlucose(cx, y, font = this.fonts.glucose) {
     const color = this.glucoseColor(this.state.glucose);
@@ -328,6 +309,8 @@ class CrimsonBearWatchface {
     }
   }
 
+  // Trend graph
+
   graphPoint(value, index, count, bounds) {
     const mmol = this.state.units === "mmol/L";
     const margin = mmol ? 1.1 : 20;
@@ -398,6 +381,8 @@ class CrimsonBearWatchface {
       );
     });
   }
+
+  // Background and setup-state layouts
 
   bearBackdrop(cx, cy, radius) {
     const earY = cy - Math.round(radius * 0.72);
@@ -480,6 +465,8 @@ class CrimsonBearWatchface {
     );
   }
 
+  // Shared status and age elements
+
   footer(width, height, footerHeight, now) {
     const clock = `${String(now.getHours()).padStart(2, "0")}:${String(
       now.getMinutes()
@@ -536,6 +523,8 @@ class CrimsonBearWatchface {
       true
     );
   }
+
+  // Complete watchface layouts
 
   fullScreenFace(width, height, footerHeight, now, age, drawFooter) {
     const contentHeight = height - footerHeight;
@@ -601,6 +590,8 @@ class CrimsonBearWatchface {
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
+  // Full-render scheduling and recovery
+
   requestRender(priority, delay = 400) {
     this.pendingRender = Math.max(this.pendingRender, priority);
     if (this.renderTimer) return;
@@ -661,6 +652,8 @@ class CrimsonBearWatchface {
     }
   }
 
+  // Minute-only partial rendering
+
   ageLayout() {
     const { width, height } = this.render;
     const footerHeight = 30;
@@ -708,7 +701,12 @@ class CrimsonBearWatchface {
     this.lastMinuteEventAt = now;
     this.updateBattery();
     if (now - this.lastTelemetrySentAt >= 60 * 60 * 1000) this.requestDiagnostics();
-    if (now - this.lastRefreshRequestedAt >= 5 * 60 * 1000) this.requestDataRefresh();
+    const readingAge = this.state.updated ? now - Number(this.state.updated) : Infinity;
+    if (
+      readingAge >= 6 * 60 * 1000 &&
+      now - this.lastRefreshRequestedAt >= 2 * 60 * 1000
+    )
+      this.requestDataRefresh();
     this.requestRender(2);
   }
 
@@ -751,6 +749,8 @@ class CrimsonBearWatchface {
     }
   }
 
+  // Unconfigured fallback screen
+
   fallback() {
     const center = this.render.width >> 1;
     this.render.begin();
@@ -782,6 +782,8 @@ class CrimsonBearWatchface {
     this.render.end();
   }
 
+  // Watch hardware services
+
   startBatteryService() {
     try {
       // Sample on the existing minute wake-up rather than keeping a battery
@@ -800,6 +802,8 @@ class CrimsonBearWatchface {
     this.state.battery = sample.percent;
     return true;
   }
+
+  // Watch-to-phone messaging
 
   startMessageService() {
     try {
@@ -858,6 +862,8 @@ class CrimsonBearWatchface {
     }
   }
 
+  // Glucose alarms
+
   checkGlucoseAlarm() {
     const glucose = Number(this.state.glucose);
     const updated = Number(this.state.updated);
@@ -905,6 +911,8 @@ class CrimsonBearWatchface {
     }
   }
 
+  // Phone-to-watch messaging
+
   readMessages() {
     let receivedData = false;
     let needsFullDraw = false;
@@ -925,7 +933,7 @@ class CrimsonBearWatchface {
           this.refreshStartedAt = 0;
         }
         try {
-          const data = this.expandData(JSON.parse(value));
+          const data = expandData(JSON.parse(value));
           const signature = JSON.stringify(data);
           needsFullDraw =
             needsFullDraw ||
