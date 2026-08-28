@@ -93,6 +93,7 @@ class DiagnosticStore {
   }
 
   expandWatchSnapshot(values) {
+    const version = Number(values[0] || 1);
     const names = [
       "at",
       "battery",
@@ -123,8 +124,9 @@ class DiagnosticStore {
       "lateMinuteEvents",
       "minuteEventLateMs",
       "minuteEventLateMaxMs",
-      "refreshResponseP50Ms",
-      "refreshResponseP95Ms",
+      ...(version >= 2
+        ? ["refreshResponseLatencyBuckets"]
+        : ["refreshResponseP50Ms", "refreshResponseP95Ms"]),
       "staleTransitions",
       "staleAlarms",
       "staleAgeMaxMs",
@@ -135,8 +137,22 @@ class DiagnosticStore {
     ];
     const snapshot = {};
     names.forEach((name, index) => {
-      snapshot[name] = Number(values[index + 1] || 0);
+      snapshot[name] =
+        name === "refreshResponseLatencyBuckets"
+          ? values[index + 1] || []
+          : Number(values[index + 1] || 0);
     });
+    if (version >= 2) {
+      snapshot.refreshResponseP50Ms = this.percentile(
+        snapshot.refreshResponseLatencyBuckets,
+        0.5
+      );
+      snapshot.refreshResponseP95Ms = this.percentile(
+        snapshot.refreshResponseLatencyBuckets,
+        0.95
+      );
+      delete snapshot.refreshResponseLatencyBuckets;
+    }
     return snapshot;
   }
 
@@ -185,7 +201,7 @@ class DiagnosticStore {
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.10",
+        version: "2.2.11",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,

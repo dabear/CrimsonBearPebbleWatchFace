@@ -34,6 +34,7 @@ class CrimsonBearWatchface {
       graph: this.render.makeColor(248, 160, 176),
       pale: this.render.makeColor(255, 224, 232),
       white: this.render.makeColor(255, 255, 255),
+      bluetooth: this.render.makeColor(0, 128, 255),
       low: this.render.makeColor(128, 0, 32),
       high: this.render.makeColor(255, 96, 48),
     };
@@ -66,7 +67,7 @@ class CrimsonBearWatchface {
     this.refreshPending = true;
     this.lastRefreshRequestedAt = 0;
     this.refreshStartedAt = 0;
-    this.phoneConnected = true;
+    this.isConnected = true;
     this.phoneDisconnectedAt = 0;
     this.telemetryPending = false;
     this.lastTelemetrySentAt = Date.now();
@@ -80,15 +81,8 @@ class CrimsonBearWatchface {
     this.draw();
     this.startBatteryService();
     this.startMessageService();
-    watch.addEventListener("connected", (event) => {
-      const connected =
-        typeof event === "boolean"
-          ? event
-          : event && typeof event.connected === "boolean"
-            ? event.connected
-            : true;
-      this.setPhoneConnected(connected);
-    });
+    watch.addEventListener("connected", () => this.checkConnection());
+    this.checkConnection();
     watch.addEventListener("minutechange", () => this.drawMinute());
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
@@ -203,7 +197,7 @@ class CrimsonBearWatchface {
       ? Math.max(0, Date.now() - this.phoneDisconnectedAt)
       : 0;
     return [
-      1,
+      2,
       Date.now(),
       this.state.battery,
       d.startedAt,
@@ -233,15 +227,14 @@ class CrimsonBearWatchface {
       d.lateMinuteEvents,
       d.minuteEventLateMs,
       d.minuteEventLateMaxMs,
-      this.percentile(d.refreshResponseLatencyBuckets, 0.5),
-      this.percentile(d.refreshResponseLatencyBuckets, 0.95),
+      d.refreshResponseLatencyBuckets,
       d.staleTransitions,
       d.staleAlarms,
       d.staleAgeMaxMs,
       d.phoneDisconnects,
       d.phoneDisconnectedMs + activeDisconnectMs,
       Math.max(d.phoneDisconnectedMaxMs, activeDisconnectMs),
-      this.phoneConnected ? 0 : 1,
+      this.isConnected ? 0 : 1,
     ];
   }
 
@@ -252,25 +245,12 @@ class CrimsonBearWatchface {
     buckets[index] += 1;
   }
 
-  percentile(buckets, percentile) {
-    const values = [250, 500, 1000, 2000, 5000, 10000, 20000, 20000];
-    const total = buckets.reduce((sum, count) => sum + count, 0);
-    if (!total) return 0;
-    const target = Math.ceil(total * percentile);
-    let seen = 0;
-    for (let index = 0; index < values.length; index += 1) {
-      seen += buckets[index];
-      if (seen >= target) return values[index];
-    }
-    return values[values.length - 1];
-  }
-
   resetDiagnostics() {
     this.diagnostics = this.newDiagnostics();
     this.lastMinuteEventAt = 0;
     this.lastTelemetrySentAt = Date.now();
     this.telemetryPending = false;
-    this.phoneDisconnectedAt = this.phoneConnected ? 0 : Date.now();
+    this.phoneDisconnectedAt = this.isConnected ? 0 : Date.now();
   }
 
   // Glucose and trend drawing primitives
@@ -527,6 +507,7 @@ class CrimsonBearWatchface {
       5,
       height - footerHeight + 5
     );
+    const clockWidth = this.render.getTextWidth(clock, this.fonts.footer);
     this.text(
       clock,
       this.fonts.footer,
@@ -536,12 +517,17 @@ class CrimsonBearWatchface {
       true
     );
     const battery = `${this.state.battery}%`;
+    const batteryLeft = width - 5 - this.render.getTextWidth(battery, this.fonts.label);
     this.text(
       battery,
       this.fonts.label,
       this.colors.white,
-      width - 5 - this.render.getTextWidth(battery, this.fonts.label),
+      batteryLeft,
       height - footerHeight + 5
+    );
+    this.drawBluetoothDisconnectedIndicator(
+      Math.round((width + clockWidth) / 2) + 4,
+      height - 24
     );
   }
 
@@ -565,52 +551,17 @@ class CrimsonBearWatchface {
     );
   }
 
-  drawPhoneDisconnectedIndicator(width) {
-    if (this.phoneConnected) return;
-    const x = width - 25;
-    const y = 8;
-    const phoneLeft = x + 4;
-    const phoneRight = x + 16;
-    const phoneTop = y + 2;
-    const phoneBottom = y + 24;
+  drawBluetoothDisconnectedIndicator(x, y) {
+    if (this.isConnected) return;
 
-    this.render.fillRectangle(this.colors.pale, x, y, 25, 30);
-    this.render.drawLine(phoneLeft, phoneTop, phoneRight, phoneTop, this.colors.ink, 2);
-    this.render.drawLine(
-      phoneRight,
-      phoneTop,
-      phoneRight,
-      phoneBottom,
-      this.colors.ink,
-      2
-    );
-    this.render.drawLine(
-      phoneRight,
-      phoneBottom,
-      phoneLeft,
-      phoneBottom,
-      this.colors.ink,
-      2
-    );
-    this.render.drawLine(
-      phoneLeft,
-      phoneBottom,
-      phoneLeft,
-      phoneTop,
-      this.colors.ink,
-      2
-    );
-    this.render.drawLine(
-      phoneLeft + 4,
-      phoneTop + 3,
-      phoneRight - 3,
-      phoneTop + 3,
-      this.colors.ink,
-      1
-    );
-    this.render.drawCircle(this.colors.ink, phoneLeft + 6, phoneBottom - 3, 1, 0, 360);
-    this.render.drawLine(x + 1, y + 1, x + 22, y + 28, this.colors.crimson, 3);
-    this.render.drawLine(x + 22, y + 1, x + 1, y + 28, this.colors.crimson, 3);
+    const blue = this.colors.bluetooth;
+    this.render.drawCircle(blue, x + 8, y + 8, 8, 0, 360);
+    this.render.drawLine(x + 8, y + 2, x + 8, y + 14, this.colors.white, 1);
+    this.render.drawLine(x + 8, y + 2, x + 12, y + 6, this.colors.white, 1);
+    this.render.drawLine(x + 12, y + 6, x + 5, y + 12, this.colors.white, 1);
+    this.render.drawLine(x + 5, y + 5, x + 12, y + 11, this.colors.white, 1);
+    this.render.drawLine(x + 12, y + 11, x + 8, y + 14, this.colors.white, 1);
+    this.render.drawLine(x + 1, y + 1, x + 15, y + 15, this.colors.crimson, 2);
   }
 
   // Complete watchface layouts
@@ -659,7 +610,6 @@ class CrimsonBearWatchface {
     const age = this.readingAge();
     if (this.state.fullScreen) {
       this.fullScreenFace(width, height, footerHeight, now, age, drawFooter);
-      this.drawPhoneDisconnectedIndicator(width);
       return;
     }
     const radius = Math.min(58, Math.round(headerHeight * 0.47));
@@ -679,7 +629,6 @@ class CrimsonBearWatchface {
       this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
 
     this.graph(0, headerHeight, width, height - headerHeight - footerHeight);
-    this.drawPhoneDisconnectedIndicator(width);
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
@@ -919,10 +868,16 @@ class CrimsonBearWatchface {
     this.flushOutbound();
   }
 
+  checkConnection() {
+    const isConnected = Boolean(watch.connected && watch.connected.app);
+    console.log(`Connected: ${isConnected}`);
+    this.setPhoneConnected(isConnected);
+  }
+
   setPhoneConnected(connected) {
-    if (connected === this.phoneConnected) return;
+    if (connected === this.isConnected) return;
     const now = Date.now();
-    this.phoneConnected = connected;
+    this.isConnected = connected;
     if (connected) {
       const duration = this.phoneDisconnectedAt
         ? Math.max(0, now - this.phoneDisconnectedAt)
@@ -937,7 +892,7 @@ class CrimsonBearWatchface {
       this.phoneDisconnectedAt = now;
       this.countDiagnostic("phoneDisconnects");
     }
-    this.draw();
+    this.requestRender(2);
   }
 
   flushOutbound() {
