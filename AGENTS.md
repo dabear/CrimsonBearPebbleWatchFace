@@ -1,0 +1,34 @@
+# Project guidance
+
+## Builds
+
+- Treat `crimsonbear` as the standard variant and `luped` as the standalone Loop variant.
+- Use `PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant <variant> --build --minify` for release verification.
+- The Alloy resource pack must remain below 32,133 bytes on every platform. Report Alloy size, byte/percentage headroom, PBW size, and SHA-256 from the build summary.
+- Build both `emery` and `gabbro`; a successful build of only one platform is not sufficient.
+- Pebble Tool requires Python 3.10 on Apple Silicon (`uv tool install --python 3.10 pebble-tool`).
+- The macOS emulator also requires Homebrew `libpng`.
+
+## Variant boundaries
+
+- Variant selection happens while assembling `src/embeddedjs/main.js.in`; keep variant-only drawing and behavior inside the existing `// @if` sections.
+- CrimsonBear and Luped have separate UUIDs and can coexist. When emulator results look like the wrong variant, reset the disposable emulator state and install the intended PBW alone.
+- Luped has no PebbleKit JS companion (`enableMultiJS: false`). CLI AppMessage injection does not reliably reproduce its Loop integration. For screenshots, a temporary source-level sample state may be used, but restore all production defaults and rebuild the final artifact afterward.
+- For mmol/L visual fixtures, use mmol/L thresholds (for example urgent-low 3.0, low 4.0, high 10.0). Reusing mg/dL thresholds makes normal readings appear in the low/crimson color.
+
+## Rendering invariants
+
+- The footer owns cached state for clock, date, battery, and Bluetooth independently.
+- Clock, date, and battery comparisons happen only from `minutechange`, using `event.date`; redraw only the region whose value changed.
+- Connection changes redraw only the Bluetooth indicator region. Do not clear or redraw unrelated footer fields.
+- The CGM reading timestamp is absolute local `HH:mm`, not relative age, and is updated only by a CGM/content render—not by the footer minute render.
+- Graph mode follows the CGM Skyline hierarchy: bold glucose centered in the ring, a smaller delta below it, and a narrow reading-time strip rendered behind the lower part of the ring.
+- Full-screen mode has no reading-time strip. Put the reading time inside the ring below the delta, and make the ring meet the footer without a gap.
+
+## Emulator verification
+
+- Verify both graph and full-screen modes for both variants after layout changes.
+- Capture Emery screenshots with `pebble screenshot --emulator emery --no-open <path>` and inspect the actual image, not only build success.
+- The first frame immediately after install can be blank or show setup while the 400 ms coalesced render is pending. Capture again after the app settles before diagnosing a rendering failure.
+- Open each requested screenshot automatically on macOS after capture.
+- Never leave sample glucose data, forced `configured`, forced `fullScreen`, or diagnostic rendering changes in production source.

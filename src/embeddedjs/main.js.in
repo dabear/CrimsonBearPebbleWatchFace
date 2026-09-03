@@ -23,6 +23,7 @@ class CrimsonBearWatchface {
       glucose: new this.render.Font("Bitham-Medium", 42),
       delta: new this.render.Font("Gothic-Bold", 24),
       label: new this.render.Font("Gothic-Regular", 18),
+      status: new this.render.Font("Gothic-Regular", 14),
       footer: new this.render.Font("Bitham-Black", 30),
       fullGlucose: new this.render.Font("Bitham-Bold", 42),
       fullDelta: new this.render.Font("Bitham-Black", 30),
@@ -62,7 +63,14 @@ class CrimsonBearWatchface {
     this.lastAlarmAt = 0;
     this.stale = false;
     this.lastDataSignature = null;
-    this.lastAgeTextWidth = 0;
+    this.footerState = {
+      clock: null,
+      date: null,
+      battery: null,
+      batteryWidth: 0,
+      connected: null,
+    };
+    this.pendingMinuteDate = null;
     this.pendingFullRender = false;
     this.pendingMinuteRender = false;
     this.renderTimer = null;
@@ -86,9 +94,16 @@ class CrimsonBearWatchface {
     this.startMessageService();
     watch.addEventListener("connected", () => this.checkConnection());
     this.checkConnection();
-    watch.addEventListener("minutechange", () => this.drawMinute());
+    watch.addEventListener("minutechange", (event) => this.drawMinute(event));
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
+      this.footerState = {
+        clock: null,
+        date: null,
+        battery: null,
+        batteryWidth: 0,
+        connected: null,
+      };
       this.draw();
     });
   }
@@ -546,6 +561,28 @@ class CrimsonBearWatchface {
 
   // Shared status and age elements
 
+  readingTime() {
+    const updated = Number(this.state.updated);
+    if (!Number.isFinite(updated) || updated <= 0) return "--:--";
+    const date = new Date(updated);
+    return `${String(date.getHours()).padStart(2, "0")}:${String(
+      date.getMinutes()
+    ).padStart(2, "0")}`;
+  }
+
+  drawCgmStatus(x, y, width, height) {
+    this.render.fillRectangle(this.colors.ink, x, y, width, height);
+    const value = this.readingTime();
+    const right = x + width - 5;
+    this.text(
+      value,
+      this.fonts.status,
+      this.colors.white,
+      right - this.render.getTextWidth(value, this.fonts.status),
+      y + 1
+    );
+  }
+
   footer(width, height, footerHeight, now) {
     const clock = `${String(now.getHours()).padStart(2, "0")}:${String(
       now.getMinutes()
@@ -595,26 +632,13 @@ class CrimsonBearWatchface {
       Math.round((width + clockWidth) / 2) + 4,
       height - 24
     );
-  }
-
-  readingAge() {
-    return this.state.updated
-      ? Math.max(0, Math.round((Date.now() - this.state.updated) / 60000))
-      : null;
-  }
-
-  drawAgeLabel(cx, y, font, age) {
-    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
-    const value = `${unit}  ${age == null ? "--m" : `${age}m`}`;
-    this.lastAgeTextWidth = this.render.getTextWidth(value, font);
-    this.text(
-      value,
-      font,
-      age != null && age > 10 ? this.colors.low : this.colors.ink,
-      cx,
-      y,
-      true
-    );
+    this.footerState = {
+      clock,
+      date: `${days[now.getDay()]} ${now.getDate()}`,
+      battery,
+      batteryWidth: this.render.getTextWidth(battery, this.fonts.label),
+      connected: this.isConnected,
+    };
   }
 
   drawBluetoothDisconnectedIndicator(x, y) {
@@ -632,11 +656,11 @@ class CrimsonBearWatchface {
 
   // Complete watchface layouts
 
-  fullScreenFace(width, height, footerHeight, now, age, drawFooter) {
+  fullScreenFace(width, height, footerHeight, now, drawFooter) {
     const contentHeight = height - footerHeight;
     const cx = width >> 1;
-    const cy = contentHeight >> 1;
-    const radius = Math.min((width >> 1) - 9, (contentHeight >> 1) - 7);
+    const radius = (width >> 1) - 9;
+    const cy = contentHeight - radius;
     this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     // @if luped
     this.drawVariantRing(cx, cy, radius);
@@ -646,18 +670,21 @@ class CrimsonBearWatchface {
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 3, 0, 360);
     // @endif
-    this.drawGlucose(cx, cy - 53, this.fonts.fullGlucose);
-    this.drawAgeLabel(cx, cy - 7, this.fonts.fullLabel, age);
+    this.drawGlucose(cx, cy - 23, this.fonts.fullGlucose);
     this.text(
       this.deltaText(),
-      this.fonts.fullDelta,
-      // @if luped
-      this.colors.graph,
-      // @else
-      this.colors.ink,
-      // @endif
+      this.fonts.delta,
+      this.stale ? this.colors.low : this.colors.ink,
       cx,
-      cy + 22,
+      cy + 18,
+      true
+    );
+    this.text(
+      this.readingTime(),
+      this.fonts.status,
+      this.stale ? this.colors.low : this.colors.ink,
+      cx,
+      cy + 47,
       true
     );
     if (!this.stale)
@@ -681,15 +708,18 @@ class CrimsonBearWatchface {
       return;
     }
 
-    const age = this.readingAge();
     if (this.state.fullScreen) {
-      this.fullScreenFace(width, height, footerHeight, now, age, drawFooter);
+      this.fullScreenFace(width, height, footerHeight, now, drawFooter);
       return;
     }
     const radius = Math.min(58, Math.round(headerHeight * 0.47));
     const cx = Math.round(width * 0.48);
     const cy = Math.round(headerHeight / 2);
+    const statusHeight = 17;
+    const statusY = cy + radius - 14;
+    const graphY = statusY + statusHeight;
     this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    this.drawCgmStatus(0, statusY, width, statusHeight);
     // @if luped
     this.drawVariantRing(cx, cy, radius);
     // @else
@@ -699,45 +729,44 @@ class CrimsonBearWatchface {
     this.render.drawCircle(this.colors.white, cx, cy, radius - 2, 0, 360);
     // @endif
 
-    const delta = this.deltaText();
-    this.drawGlucose(cx, @COMPACT_GLUCOSE_Y@);
-    this.drawAgeLabel(cx, cy - 3, this.fonts.label, age);
+    this.drawGlucose(cx, cy - 23, this.fonts.fullGlucose);
     this.text(
-      delta,
+      this.deltaText(),
       this.fonts.delta,
-      // @if luped
-      this.colors.graph,
-      // @else
-      this.colors.ink,
-      // @endif
+      this.stale ? this.colors.low : this.colors.ink,
       cx,
-      cy + 19,
+      cy + 18,
       true
     );
     if (!this.stale)
       this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
 
-    this.graph(0, headerHeight, width, height - headerHeight - footerHeight);
+    this.graph(0, graphY, width, height - graphY - footerHeight);
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
   // Full-render scheduling and recovery
 
-  requestRender(priority, delay = 400) {
+  requestRender(priority, delay = 400, minuteDate = null) {
     if (priority >= 3) this.pendingFullRender = true;
-    else if (priority === 2) this.pendingMinuteRender = true;
+    else if (priority === 2) {
+      this.pendingMinuteRender = true;
+      if (minuteDate) this.pendingMinuteDate = minuteDate;
+    }
     if (this.renderTimer) return;
     this.renderTimer = setTimeout(() => {
       this.renderTimer = null;
       const full = this.pendingFullRender;
       const minute = this.pendingMinuteRender;
+      const minuteDate = this.pendingMinuteDate;
       this.pendingFullRender = false;
       this.pendingMinuteRender = false;
+      this.pendingMinuteDate = null;
       // Both are serviced when coalesced: a full/content draw never touches
       // the footer band, so a footer-only request (e.g. connection status)
       // must still run drawMinuteNow() even after drawNow() ran.
       if (full) this.drawNow();
-      if (minute) this.drawMinuteNow();
+      if (minute) this.drawMinuteNow(minuteDate);
     }, delay);
   }
 
@@ -788,40 +817,10 @@ class CrimsonBearWatchface {
 
   // Minute-only partial rendering
 
-  ageLayout() {
-    const { width, height } = this.render;
-    const footerHeight = 30;
-    const age = this.readingAge();
-    const fullScreen = this.state.fullScreen;
-    const headerHeight = Math.round(height * 0.54);
-    const contentHeight = height - footerHeight;
-    const cx = fullScreen ? width >> 1 : Math.round(width * 0.48);
-    const cy = fullScreen ? contentHeight >> 1 : Math.round(headerHeight / 2);
-    const font = fullScreen ? this.fonts.fullLabel : this.fonts.label;
-    const y = cy + (fullScreen ? -7 : -3);
-    const unit = this.state.units === "mmol/L" ? "mmol" : "mg/dL";
-    const value = `${unit}  ${age == null ? "--m" : `${age}m`}`;
-    const widthNow = this.render.getTextWidth(value, font);
-    const labelWidth = Math.max(widthNow, this.lastAgeTextWidth) + 8;
-    const x = Math.round(cx - labelWidth / 2);
-
-    return { x, y, width: labelWidth, height: font.height, cx, font, age };
-  }
-
-  drawAgeContents(layout) {
-    this.render.fillRectangle(
-      this.colors.white,
-      layout.x,
-      layout.y,
-      layout.width,
-      layout.height
-    );
-    this.drawAgeLabel(layout.cx, layout.y, layout.font, layout.age);
-  }
-
-  drawMinute() {
+  drawMinute(event) {
     if (!this.state.configured) return;
-    const now = Date.now();
+    const date = event && event.date ? event.date : new Date();
+    const now = date.getTime();
     this.ensureDiagnosticsWindow();
     if (this.lastMinuteEventAt) {
       const late = Math.max(0, now - this.lastMinuteEventAt - 60000);
@@ -844,31 +843,69 @@ class CrimsonBearWatchface {
       this.requestDataRefresh();
     // @endif
     const staleChanged = this.updateStaleState(now);
-    this.requestRender(staleChanged ? 3 : 2);
+    this.requestRender(staleChanged ? 3 : 2, 400, date);
   }
 
-  drawMinuteNow() {
+  drawMinuteNow(minuteDate = null) {
     if (!this.state.configured) return;
     const startedAt = Date.now();
-    const age = this.ageLayout();
     const footerHeight = 30;
     const footerY = this.render.height - footerHeight;
+    const width = this.render.width;
+    const date = minuteDate || new Date();
+    const clock = `${String(date.getHours()).padStart(2, "0")}:${String(
+      date.getMinutes()
+    ).padStart(2, "0")}`;
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const dateText = `${days[date.getDay()]} ${date.getDate()}`;
+    const battery = `${this.state.battery}%`;
+    const checkMinute = Boolean(minuteDate);
+    const clockChanged = checkMinute && clock !== this.footerState.clock;
+    const dateChanged = checkMinute && dateText !== this.footerState.date;
+    const batteryChanged = checkMinute && battery !== this.footerState.battery;
+    const connectionChanged = this.isConnected !== this.footerState.connected;
     let invalidatedPixels = 0;
     let began = false;
     try {
-      this.render.begin(age.x, age.y, age.width, age.height);
-      began = true;
-      invalidatedPixels += age.width * age.height;
-      this.drawAgeContents(age);
-      began = false;
-      this.render.end();
-
-      this.render.begin(0, footerY, this.render.width, footerHeight);
-      began = true;
-      invalidatedPixels += this.render.width * footerHeight;
-      this.footer(this.render.width, this.render.height, 30, new Date());
-      began = false;
-      this.render.end();
+      const redraw = (x, regionWidth, draw) => {
+        this.render.begin(x, footerY, regionWidth, footerHeight);
+        began = true;
+        this.render.fillRectangle(this.colors.ink, x, footerY, regionWidth, footerHeight);
+        draw();
+        began = false;
+        this.render.end();
+        invalidatedPixels += regionWidth * footerHeight;
+      };
+      if (dateChanged)
+        redraw(0, 58, () =>
+          this.text(dateText, this.fonts.label, this.colors.white, 5, footerY + 5)
+        );
+      if (clockChanged)
+        redraw(Math.round(width / 2) - 43, 86, () =>
+          this.text(clock, this.fonts.footer, this.colors.white, width / 2, footerY, true)
+        );
+      if (batteryChanged) {
+        const batteryWidth = this.render.getTextWidth(battery, this.fonts.label);
+        const clearWidth = Math.max(batteryWidth, this.footerState.batteryWidth) + 2;
+        const batteryLeft = width - 5 - batteryWidth;
+        redraw(width - 5 - clearWidth, clearWidth, () =>
+          this.text(battery, this.fonts.label, this.colors.white, batteryLeft, footerY + 5)
+        );
+        this.footerState.batteryWidth = batteryWidth;
+      }
+      if (connectionChanged) {
+        const clockWidth = this.render.getTextWidth(clock, this.fonts.footer);
+        const indicatorX = Math.round((width + clockWidth) / 2) + 4;
+        redraw(indicatorX, 18, () =>
+          this.drawBluetoothDisconnectedIndicator(indicatorX, this.render.height - 24)
+        );
+      }
+      if (checkMinute) {
+        this.footerState.clock = clock;
+        this.footerState.date = dateText;
+        this.footerState.battery = battery;
+      }
+      this.footerState.connected = this.isConnected;
       this.recordDraw("minute", startedAt, invalidatedPixels);
       this.renderRetryCount = 0;
     } catch (error) {

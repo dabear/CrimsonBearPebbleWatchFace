@@ -248,7 +248,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
     # Only these CrimsonBearWatchface prototype methods are eligible for property
     # mangling. State, diagnostics, AppMessage, Pebble and renderer properties are
     # deliberately absent so the phone/mobile protocol and host APIs stay stable.
-    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|bearBackdrop|setupScreen|footer|readingAge|drawAgeLabel|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|ageLayout|drawAgeContents|drawMinute|drawMinuteNow|fallback|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|checkGlucoseAlarm|readMessages)$/'
+    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|bearBackdrop|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|fallback|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|checkGlucoseAlarm|readMessages)$/'
     for watch_module in main protocol; do
       readable_module="$stage/src/embeddedjs/$watch_module.js"
       minified_module="$stage/src/embeddedjs/$watch_module.min.js"
@@ -308,6 +308,12 @@ if [[ "$do_build" == true ]]; then
   test -s "$artifact"
   artifact_size="$(wc -c < "$artifact" | tr -d ' ')"
   echo "PBW package: $artifact_size bytes ($artifact)"
+  if command -v sha256sum >/dev/null 2>&1; then
+    artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+  else
+    artifact_sha256="$(shasum -a 256 "$artifact" | awk '{print $1}')"
+  fi
+  echo "PBW SHA-256: $artifact_sha256"
 fi
 
 if [[ "$do_install" == true ]]; then

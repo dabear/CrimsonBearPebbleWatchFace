@@ -39,10 +39,10 @@ Credentials remain in the Pebble phone companion's local storage and are sent on
 
 ## Quick build
 
-You need Python 3, Node.js, [`uv`](https://docs.astral.sh/uv/), and a working ARM toolchain. Then run:
+You need Python 3.10, Node.js, [`uv`](https://docs.astral.sh/uv/), and a working ARM toolchain. Then run:
 
 ```sh
-uv tool install pebble-tool
+uv tool install --python 3.10 pebble-tool
 pebble sdk install latest
 git clone git@github.com:dabear/CrimsonBearPebbleWatchFace.git
 cd CrimsonBearPebbleWatchFace
