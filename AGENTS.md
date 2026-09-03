@@ -50,6 +50,7 @@
 - After installing or injecting data, wait for the app’s coalesced render before capturing. A setup, blank, or stale frame immediately after the command can be transient.
 - When a screenshot is requested, save it under `assets/`, open it with macOS `open`, and inspect the image contents before reporting visual verification.
 - For Luped, the CLI cannot reliably inject named AppMessage fields because it has no PebbleKit JS companion. Use a temporary source-level sample state only for visual checks, then restore defaults and rebuild the production PBW.
+- For refreshed visual assets, use the in-range mmol/L fixture (6.8 glucose, +0.2 delta, 5.4–6.8 readings, thresholds 3.0/4.0/10.0), isolate it from the companion with `SCREENSHOT_FIXTURE`, and use `--vnc` when the emulator must remain available for a separate screenshot command. Restore the fixture and rebuild production artifacts before publishing.
 
 ## Pixel-budget reporting
 
