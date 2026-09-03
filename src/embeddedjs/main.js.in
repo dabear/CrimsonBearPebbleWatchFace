@@ -4,6 +4,12 @@ import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
 import { expandData } from "protocol";
 
+const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
+const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
+// Grace period to let diagnostics ride an already-outgoing message before
+// forcing a dedicated radio wake-up for telemetry alone.
+const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
+
 function vibe() {
   const p = [300];
   let n = 8;
@@ -84,7 +90,9 @@ class CrimsonBearWatchface {
     this.isConnected = true;
     this.phoneDisconnectedAt = 0;
     this.telemetryPending = false;
+    this.telemetryDueAt = 0;
     this.lastTelemetrySentAt = Date.now();
+    this.lastBatterySampleAt = 0;
     this.lastMinuteEventAt = 0;
     this.startupId = Date.now();
     this.diagnostics = this.newDiagnostics();
@@ -272,6 +280,7 @@ class CrimsonBearWatchface {
     this.lastMinuteEventAt = 0;
     this.lastTelemetrySentAt = Date.now();
     this.telemetryPending = false;
+    this.telemetryDueAt = 0;
     this.phoneDisconnectedAt = this.isConnected ? 0 : Date.now();
   }
 
@@ -863,8 +872,21 @@ class CrimsonBearWatchface {
       if (late >= 1000) this.countDiagnostic("lateMinuteEvents");
     }
     this.lastMinuteEventAt = now;
-    this.updateBattery();
-    if (now - this.lastTelemetrySentAt >= 60 * 60 * 1000) this.requestDiagnostics();
+    if (now - this.lastBatterySampleAt >= BATTERY_SAMPLE_INTERVAL_MS) {
+      this.updateBattery();
+      this.lastBatterySampleAt = now;
+    }
+    if (!this.telemetryPending && now - this.lastTelemetrySentAt >= DIAGNOSTICS_INTERVAL_MS) {
+      // Mark telemetry due without forcing its own write; let it ride the
+      // next outbound message (a refresh request or onWritable flush).
+      this.telemetryPending = true;
+      this.telemetryDueAt = now;
+    }
+    if (
+      this.telemetryPending &&
+      now - this.telemetryDueAt >= DIAGNOSTICS_PIGGYBACK_GRACE_MS
+    )
+      this.flushOutbound();
     // @if timedRefresh
     const readingAge = this.state.updated ? now - Number(this.state.updated) : Infinity;
     if (
@@ -994,6 +1016,7 @@ class CrimsonBearWatchface {
       // service callback subscribed for the lifetime of the watchface.
       this.battery = new Battery({});
       this.updateBattery();
+      this.lastBatterySampleAt = Date.now();
     } catch (_) {
       // Battery data is optional.
     }

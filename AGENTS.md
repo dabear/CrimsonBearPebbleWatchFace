@@ -56,4 +56,14 @@
 - Current minute redraws invalidate an approximately 86×30 clock region; minified and unminified builds have identical pixel geometry. Emery’s content-only region is 200×198 and Gabbro’s is 260×230.
 - User-facing platform names are Pebble Time 2 (`emery`, 200×228) and Pebble Round 2 (`gabbro`, 260×260); use those names in reports instead of only the platform codenames.
 - Rendering uses a single-flight gate (`renderBusy`) with dirty/priority flags and zero-delay event-loop coalescing. The gate is cleared in `finally`, and queued work is serviced afterward; render-failure retries preserve their longer delay. A lock alone would drop updates or cause redundant retries.
-- Remaining battery opportunities are primarily sampling `Battery` less often than every minute, piggybacking hourly diagnostics on an existing phone message, and splitting CGM content into smaller dirty regions where Poco layering permits. The zero-delay coalescer minimizes latency; a short 25–75 ms coalescing window is an optional burst-energy tradeoff.
+- `Battery` is sampled at most every `BATTERY_SAMPLE_INTERVAL_MS` (5 minutes) from the existing minute wake-up, not on every `minutechange`. Hourly diagnostics are marked pending (`telemetryPending`/`telemetryDueAt`) and ride the next outbound write (a refresh request or `onWritable` flush) instead of forcing their own; `DIAGNOSTICS_PIGGYBACK_GRACE_MS` (15 minutes) forces a dedicated flush only if nothing else has sent them by then. On-demand `COMMAND diagnostics` requests from the phone still flush immediately via `requestDiagnostics()`.
+- Remaining battery opportunity: splitting CGM content into smaller dirty regions where Poco layering permits. The zero-delay coalescer minimizes latency; a short 25–75 ms coalescing window is an optional burst-energy tradeoff.
+- After every release build, recompute and report the fixed daily pixel-redraw table below for both platforms (full frame + 288 CGM updates + 1,440 minute clock redraws + 1 date-rollover redraw; battery/Bluetooth redraws stay out of the fixed total since they're variable), diff it against the "Last recorded" table, call out any change (or state explicitly that there is none), and overwrite the "Last recorded" table with the new numbers and date/commit.
+- Last recorded fixed pixel-redraw table (2026-09-03, commit `cdd4768` + battery/diagnostics piggyback change):
+  | Component            | Region                 | Count/day | Emery px/day   | Gabbro px/day  |
+  | -------------------- | ---------------------- | --------- | -------------- | -------------- |
+  | Full frame           | 200×228 / 260×260      | 1         | 45,600         | 67,600         |
+  | CGM content updates  | 200×198 / 260×230      | 288       | 11,404,800     | 17,222,400     |
+  | Minute clock redraws | 86×30 (both platforms) | 1,440     | 3,715,200      | 3,715,200      |
+  | Date rollover        | 58×30 (both platforms) | 1         | 1,740          | 1,740          |
+  | **Fixed total**      |                        |           | **15,167,340** | **21,006,940** |
