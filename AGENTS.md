@@ -31,6 +31,7 @@
 - Graph mode follows the CGM Skyline hierarchy: bold glucose centered in the ring, a smaller delta below it, and a narrow reading-time strip rendered behind the lower part of the ring.
 - Full-screen mode has no reading-time strip. Put the reading time inside the ring below the delta, and make the ring meet the footer without a gap.
 - Once a configured face has rendered, preserve the pale content background and fixed status-strip fill during content updates; clear/redraw only the changing timestamp and dynamic ring/graph pixels. Initial setup, resize, and fullscreen/layout transitions still require the static layers.
+- In graph mode, the trend arrow sits outside the ring's radius, so the ring/backdrop redraw never repaints that spot. Explicitly clear its bounding box (see `arrowClearRadius` in `face()`) before drawing, or a direction change leaves the old glyph's strokes mixed with the new one. Full-screen mode doesn't need this: its arrow sits inside the ring, which the inner white circle already repaints every render.
 
 ## Emulator verification
 
@@ -59,7 +60,7 @@
 - `Battery` is sampled at most every `BATTERY_SAMPLE_INTERVAL_MS` (5 minutes) from the existing minute wake-up, not on every `minutechange`. Hourly diagnostics are marked pending (`telemetryPending`/`telemetryDueAt`) and ride the next outbound write (a refresh request or `onWritable` flush) instead of forcing their own; `DIAGNOSTICS_PIGGYBACK_GRACE_MS` (15 minutes) forces a dedicated flush only if nothing else has sent them by then. On-demand `COMMAND diagnostics` requests from the phone still flush immediately via `requestDiagnostics()`.
 - Remaining battery opportunity: splitting CGM content into smaller dirty regions where Poco layering permits. The zero-delay coalescer minimizes latency; a short 25–75 ms coalescing window is an optional burst-energy tradeoff.
 - After every release build, recompute and report the fixed daily pixel-redraw table below for both platforms (full frame + 288 CGM updates + 1,440 minute clock redraws + 1 date-rollover redraw; battery/Bluetooth redraws stay out of the fixed total since they're variable), diff it against the "Last recorded" table, call out any change (or state explicitly that there is none), and overwrite the "Last recorded" table with the new numbers and date/commit.
-- Last recorded fixed pixel-redraw table (2026-09-03, commit `6e1fe0b`):
+- Last recorded fixed pixel-redraw table (2026-09-03, commit `8ba5842` + uncommitted graph-mode arrow-clear fix — no change to the fixed geometry below, since the arrow clear reuses the already-counted content-region transaction):
   | Component            | Region                 | Count/day | Emery px/day   | Gabbro px/day  |
   | -------------------- | ---------------------- | --------- | -------------- | -------------- |
   | Full frame           | 200×228 / 260×260      | 1         | 45,600         | 67,600         |

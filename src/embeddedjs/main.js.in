@@ -763,8 +763,19 @@ class CrimsonBearWatchface {
       cy + 14,
       true
     );
-    if (!this.stale)
-      this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
+    // The arrow sits outside the ring's redrawn circle, so nothing else
+    // repaints this spot on a content-only render; clear it every time or a
+    // direction change leaves the old glyph's strokes mixed with the new one.
+    const arrowCx = width - 21;
+    const arrowClearRadius = 20;
+    this.render.fillRectangle(
+      this.colors.pale,
+      arrowCx - arrowClearRadius,
+      cy - arrowClearRadius,
+      arrowClearRadius * 2,
+      arrowClearRadius * 2
+    );
+    if (!this.stale) this.arrow(arrowCx, cy, this.state.direction, this.colors.crimson);
 
     this.graph(0, graphY, width, height - graphY - footerHeight);
     if (drawFooter) this.footer(width, height, footerHeight, now);
