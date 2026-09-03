@@ -201,7 +201,7 @@ class DiagnosticStore {
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.11",
+        version: "2.2.12",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,
@@ -298,17 +298,22 @@ class NightscoutClient {
       return;
     }
     const headers = this.settings.token ? { "api-secret": this.settings.token } : {};
-    this.request(`${base}/api/v1/entries/sgv.json?count=12`, headers, (error, data) => {
-      if (error) {
-        done(error);
-        return;
+    const cacheBust = Date.now();
+    this.request(
+      `${base}/api/v1/entries/sgv.json?count=12&_=${cacheBust}`,
+      headers,
+      (error, data) => {
+        if (error) {
+          done(error);
+          return;
+        }
+        try {
+          done(null, this.normalize(data));
+        } catch (parseError) {
+          done(parseError);
+        }
       }
-      try {
-        done(null, this.normalize(data));
-      } catch (parseError) {
-        done(parseError);
-      }
-    });
+    );
   }
 }
 
@@ -383,12 +388,19 @@ class CrimsonBearCompanion {
 
   refresh(source = "timer") {
     const now = Date.now();
-    if (this.fetchInFlight) return;
-    if (source !== "settings" && now - this.lastFetchStartedAt < 60 * 1000) {
+    if (this.fetchInFlight) {
+      if (source === "timer") this.scheduler.scheduleIn(10000);
+      return;
+    }
+    const sinceLastFetch = now - this.lastFetchStartedAt;
+    if (source !== "settings" && sinceLastFetch < 60 * 1000) {
       // A watch request still needs a response, but the fallback phone timer
-      // can simply reuse the recent fetch on its next interval.
+      // can simply reuse the recent fetch on its next interval. A timer that
+      // fired just before the throttle boundary must replace itself.
       if (source === "watch" && this.lastResponsePayload)
         this.send(this.lastResponsePayload);
+      if (source === "timer")
+        this.scheduler.scheduleIn(60 * 1000 - Math.max(0, sinceLastFetch) + 100);
       return;
     }
     this.diagnostics.increment("fetches");
