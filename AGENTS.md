@@ -54,3 +54,4 @@
 
 - The diagnostics `invalidatedPixels` counter reports transaction area, not individual drawing writes. For a typical 24-hour estimate, use 1 initial full frame, 288 CGM updates (5-minute cadence), and 1,440 minute events; add one 58×30 date region redraw and any actual battery/Bluetooth changes.
 - Current minute redraws invalidate an approximately 86×30 clock region; minified and unminified builds have identical pixel geometry. Emery’s content-only region is 200×198 and Gabbro’s is 260×230.
+- User-facing platform names are Pebble Time 2 (`emery`, 200×228) and Pebble Round 2 (`gabbro`, 260×260); use those names in reports instead of only the platform codenames.
