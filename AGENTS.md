@@ -49,3 +49,8 @@
 - After installing or injecting data, wait for the app’s coalesced render before capturing. A setup, blank, or stale frame immediately after the command can be transient.
 - When a screenshot is requested, save it under `assets/`, open it with macOS `open`, and inspect the image contents before reporting visual verification.
 - For Luped, the CLI cannot reliably inject named AppMessage fields because it has no PebbleKit JS companion. Use a temporary source-level sample state only for visual checks, then restore defaults and rebuild the production PBW.
+
+## Pixel-budget reporting
+
+- The diagnostics `invalidatedPixels` counter reports transaction area, not individual drawing writes. For a typical 24-hour estimate, use 1 initial full frame, 288 CGM updates (5-minute cadence), and 1,440 minute events; add one 58×30 date region redraw and any actual battery/Bluetooth changes.
+- Current minute redraws invalidate an approximately 86×30 clock region; minified and unminified builds have identical pixel geometry. Emery’s content-only region is 200×198 and Gabbro’s is 260×230.
