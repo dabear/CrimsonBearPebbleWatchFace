@@ -473,6 +473,12 @@ class CrimsonBearWatchface {
     const ringColor = this.stale ? this.colors.graph : this.glucoseColor(glucose);
     this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, 0, 360);
     this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, 0, 360);
+    // Approximate Loop's dark-to-bright ring gradient with two lightweight
+    // arcs. Alert rings remain a single color so the ring matches the value.
+    if (!this.stale && glucose > Number(this.state.low) && glucose < Number(this.state.high)) {
+      this.render.drawCircle(this.colors.ringShadow, cx, cy, outerRadius - 1, 180, 360);
+      this.render.drawCircle(this.colors.ringHighlight, cx, cy, outerRadius - 1, 0, 180);
+    }
     this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);
     this.render.drawCircle(
       this.colors.white,

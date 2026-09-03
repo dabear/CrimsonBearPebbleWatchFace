@@ -180,6 +180,8 @@ const replacements = {
   COLOR_PALE: color("pale"),
   COLOR_LOW: color("low"),
   COLOR_HIGH: color("high"),
+  COLOR_RING_SHADOW: color("ringShadow"),
+  COLOR_RING_HIGHLIGHT: color("ringHighlight"),
   SETUP_APP_TEXT: JSON.stringify(config.text.setupApp),
   SETTINGS_TEXT: JSON.stringify(config.text.settings),
   SETUP_ACTION_TEXT: JSON.stringify(config.text.setupAction),
