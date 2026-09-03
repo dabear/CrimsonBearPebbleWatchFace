@@ -68,3 +68,4 @@
   | Minute clock redraws | 86×30 (both platforms) | 1,440     | 3,715,200      | 3,715,200      |
   | Date rollover        | 58×30 (both platforms) | 1         | 1,740          | 1,740          |
   | **Fixed total**      |                        |           | **15,167,340** | **21,006,940** |
+- Keep exactly two screenshot assets per variant: normal graph mode and fullscreen mode. CrimsonBear publishing uploads its two `emery_` screenshots with `--replace-screenshots`; Luped remains local-only until a store publishing workflow is configured.

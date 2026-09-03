@@ -2,6 +2,7 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+repo_root="$(pwd)"
 
 do_build=false
 do_install=false
@@ -342,6 +343,10 @@ if [[ "$do_publish" == true ]]; then
       --is-published \
       --non-interactive \
       --no-gif-all-platforms \
+      --screenshots \
+        "$repo_root/assets/emery_graph_screenshot.png" \
+        "$repo_root/assets/emery_fullscreen_screenshot.png" \
+      --replace-screenshots \
       --release-notes "$release_notes"
   )
 fi
