@@ -73,7 +73,9 @@ class CrimsonBearWatchface {
     this.pendingMinuteDate = null;
     this.pendingFullRender = false;
     this.pendingMinuteRender = false;
+    this.pendingRenderDelay = 0;
     this.renderTimer = null;
+    this.renderBusy = false;
     this.renderRetryCount = 0;
     this.lastRenderedFullScreen = null;
     this.refreshPending = true;
@@ -761,27 +763,38 @@ class CrimsonBearWatchface {
 
   // Full-render scheduling and recovery
 
-  requestRender(priority, delay = 400, minuteDate = null) {
+  requestRender(priority, delay = 0, minuteDate = null) {
     if (priority >= 3) this.pendingFullRender = true;
     else if (priority === 2) {
       this.pendingMinuteRender = true;
       if (minuteDate) this.pendingMinuteDate = minuteDate;
     }
-    if (this.renderTimer) return;
+    this.pendingRenderDelay = Math.max(this.pendingRenderDelay, Math.max(0, delay));
+    if (this.renderBusy || this.renderTimer) return;
+
     this.renderTimer = setTimeout(() => {
       this.renderTimer = null;
+      if (this.renderBusy) return;
       const full = this.pendingFullRender;
       const minute = this.pendingMinuteRender;
       const minuteDate = this.pendingMinuteDate;
       this.pendingFullRender = false;
       this.pendingMinuteRender = false;
       this.pendingMinuteDate = null;
-      // Both are serviced when coalesced: a full/content draw never touches
-      // the footer band, so a footer-only request (e.g. connection status)
-      // must still run drawMinuteNow() even after drawNow() ran.
-      if (full) this.drawNow();
-      if (minute) this.drawMinuteNow(minuteDate);
-    }, delay);
+      this.pendingRenderDelay = 0;
+      this.renderBusy = true;
+      try {
+        // Both are serviced when coalesced: a full/content draw never touches
+        // the footer band, so a footer-only request (e.g. connection status)
+        // must still run drawMinuteNow() even after drawNow() ran.
+        if (full) this.drawNow();
+        if (minute) this.drawMinuteNow(minuteDate);
+      } finally {
+        this.renderBusy = false;
+        if (this.pendingFullRender || this.pendingMinuteRender)
+          this.requestRender(this.pendingFullRender ? 3 : 2);
+      }
+    }, this.pendingRenderDelay);
   }
 
   draw() {
