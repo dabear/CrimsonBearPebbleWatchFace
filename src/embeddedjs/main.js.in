@@ -29,10 +29,12 @@ class CrimsonBearWatchface {
       fullLabel: new this.render.Font("Gothic-Bold", 24),
     };
     this.colors = {
-      ink: this.render.makeColor(64, 0, 16),
-      crimson: this.render.makeColor(192, 0, 48),
-      graph: this.render.makeColor(248, 160, 176),
-      pale: this.render.makeColor(255, 224, 232),
+      ink: this.render.makeColor(@COLOR_INK@),
+      ringBorder: this.render.makeColor(@COLOR_RING_BORDER@),
+      crimson: this.render.makeColor(@COLOR_ACCENT@),
+      graph: this.render.makeColor(@COLOR_GRAPH@),
+      panel: this.render.makeColor(@COLOR_PANEL@),
+      pale: this.render.makeColor(@COLOR_PALE@),
       white: this.render.makeColor(255, 255, 255),
       bluetooth: this.render.makeColor(0, 128, 255),
       low: this.render.makeColor(128, 0, 32),
@@ -61,7 +63,8 @@ class CrimsonBearWatchface {
     this.stale = false;
     this.lastDataSignature = null;
     this.lastAgeTextWidth = 0;
-    this.pendingRender = 0;
+    this.pendingFullRender = false;
+    this.pendingMinuteRender = false;
     this.renderTimer = null;
     this.renderRetryCount = 0;
     this.refreshPending = true;
@@ -358,7 +361,11 @@ class CrimsonBearWatchface {
   }
 
   graph(x, y, width, height) {
+    // @if luped
+    this.render.fillRectangle(this.colors.panel, x, y, width, height);
+    // @else
     this.render.fillRectangle(this.colors.graph, x, y, width, height);
+    // @endif
     const values = this.state.readings;
     if (!values.length) {
       this.text(
@@ -387,11 +394,35 @@ class CrimsonBearWatchface {
         points[index - 1].y,
         points[index].x,
         points[index].y,
+        // @if luped
+        this.colors.graph,
+        3
+        // @else
         this.colors.ink,
         4
+        // @endif
       );
     }
     points.forEach((point, index) => {
+      // @if luped
+      const latest = index === points.length - 1;
+      this.render.drawCircle(
+        latest ? this.colors.ink : this.colors.white,
+        point.x,
+        point.y,
+        latest ? 6 : 4,
+        0,
+        360
+      );
+      this.render.drawCircle(
+        this.glucoseColor(values[index]),
+        point.x,
+        point.y,
+        latest ? 4 : 2,
+        0,
+        360
+      );
+      // @else
       this.render.drawCircle(
         this.glucoseColor(values[index]),
         point.x,
@@ -400,11 +431,37 @@ class CrimsonBearWatchface {
         0,
         360
       );
+      // @endif
     });
   }
 
   // Background and setup-state layouts
 
+  // @if luped
+  drawVariantRing(cx, cy, radius) {
+    const outerRadius = radius - 3;
+    const ringWidth = Math.min(10, Math.max(9, Math.round(outerRadius * 0.12)));
+    const glucose = Number(this.state.glucose);
+    const ringColor = this.stale
+      ? this.colors.graph
+      : glucose <= Number(this.state.low)
+        ? this.colors.low
+        : glucose >= Number(this.state.high)
+          ? this.colors.high
+          : this.colors.crimson;
+    this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, 0, 360);
+    this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, 0, 360);
+    this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);
+    this.render.drawCircle(
+      this.colors.white,
+      cx,
+      cy,
+      outerRadius - ringWidth - 2,
+      0,
+      360
+    );
+  }
+  // @else
   bearBackdrop(cx, cy, radius) {
     const earY = cy - Math.round(radius * 0.72);
     const earOffset = Math.round(radius * 0.72);
@@ -428,6 +485,7 @@ class CrimsonBearWatchface {
       );
     }
   }
+  // @endif
 
   setupScreen(width, height) {
     const center = width >> 1;
@@ -460,7 +518,7 @@ class CrimsonBearWatchface {
     this.text("!", this.fonts.glucose, this.colors.white, center, phoneY + 6, true);
     this.text("SET UP REQUIRED", this.fonts.delta, this.colors.white, center, 91, true);
     this.text(
-      "Open the Pebble app",
+      @SETUP_APP_TEXT@,
       this.fonts.label,
       this.colors.pale,
       center,
@@ -469,7 +527,7 @@ class CrimsonBearWatchface {
     );
     this.text("on your phone", this.fonts.label, this.colors.pale, center, 148, true);
     this.text(
-      "CrimsonBear Cgm settings",
+      @SETTINGS_TEXT@,
       this.fonts.label,
       this.colors.white,
       center,
@@ -477,7 +535,7 @@ class CrimsonBearWatchface {
       true
     );
     this.text(
-      "enter your data source",
+      @SETUP_ACTION_TEXT@,
       this.fonts.label,
       this.colors.white,
       center,
@@ -503,7 +561,11 @@ class CrimsonBearWatchface {
     this.text(
       `${days[now.getDay()]} ${now.getDate()}`,
       this.fonts.label,
+      // @if luped
+      this.colors.pale,
+      // @else
       this.colors.white,
+      // @endif
       5,
       height - footerHeight + 5
     );
@@ -521,7 +583,11 @@ class CrimsonBearWatchface {
     this.text(
       battery,
       this.fonts.label,
+      // @if luped
+      this.colors.pale,
+      // @else
       this.colors.white,
+      // @endif
       batteryLeft,
       height - footerHeight + 5
     );
@@ -572,16 +638,24 @@ class CrimsonBearWatchface {
     const cy = contentHeight >> 1;
     const radius = Math.min((width >> 1) - 9, (contentHeight >> 1) - 7);
     this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    // @if luped
+    this.drawVariantRing(cx, cy, radius);
+    // @else
     this.bearBackdrop(cx, cy, radius);
     this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 3, 0, 360);
+    // @endif
     this.drawGlucose(cx, cy - 53, this.fonts.fullGlucose);
     this.drawAgeLabel(cx, cy - 7, this.fonts.fullLabel, age);
     this.text(
       this.deltaText(),
       this.fonts.fullDelta,
+      // @if luped
+      this.colors.graph,
+      // @else
       this.colors.ink,
+      // @endif
       cx,
       cy + 22,
       true
@@ -592,7 +666,7 @@ class CrimsonBearWatchface {
         cy,
         this.state.direction,
         this.colors.crimson,
-        1.25
+        @FULL_ARROW_SCALE@
       );
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
@@ -616,15 +690,30 @@ class CrimsonBearWatchface {
     const cx = Math.round(width * 0.48);
     const cy = Math.round(headerHeight / 2);
     this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    // @if luped
+    this.drawVariantRing(cx, cy, radius);
+    // @else
     this.bearBackdrop(cx, cy, radius);
     this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 2, 0, 360);
+    // @endif
 
     const delta = this.deltaText();
-    this.drawGlucose(cx, cy - 45);
+    this.drawGlucose(cx, @COMPACT_GLUCOSE_Y@);
     this.drawAgeLabel(cx, cy - 3, this.fonts.label, age);
-    this.text(delta, this.fonts.delta, this.colors.ink, cx, cy + 19, true);
+    this.text(
+      delta,
+      this.fonts.delta,
+      // @if luped
+      this.colors.graph,
+      // @else
+      this.colors.ink,
+      // @endif
+      cx,
+      cy + 19,
+      true
+    );
     if (!this.stale)
       this.arrow(width - 21, cy, this.state.direction, this.colors.crimson);
 
@@ -635,15 +724,20 @@ class CrimsonBearWatchface {
   // Full-render scheduling and recovery
 
   requestRender(priority, delay = 400) {
-    this.pendingRender = Math.max(this.pendingRender, priority);
+    if (priority >= 3) this.pendingFullRender = true;
+    else if (priority === 2) this.pendingMinuteRender = true;
     if (this.renderTimer) return;
     this.renderTimer = setTimeout(() => {
       this.renderTimer = null;
-      const pending = this.pendingRender;
-      this.pendingRender = 0;
-      if (pending === 3) this.drawNow();
-      else if (pending === 2) this.drawMinuteNow();
-      if (this.pendingRender) this.requestRender(this.pendingRender);
+      const full = this.pendingFullRender;
+      const minute = this.pendingMinuteRender;
+      this.pendingFullRender = false;
+      this.pendingMinuteRender = false;
+      // Both are serviced when coalesced: a full/content draw never touches
+      // the footer band, so a footer-only request (e.g. connection status)
+      // must still run drawMinuteNow() even after drawNow() ran.
+      if (full) this.drawNow();
+      if (minute) this.drawMinuteNow();
     }, delay);
   }
 
@@ -741,12 +835,14 @@ class CrimsonBearWatchface {
     this.lastMinuteEventAt = now;
     this.updateBattery();
     if (now - this.lastTelemetrySentAt >= 60 * 60 * 1000) this.requestDiagnostics();
+    // @if timedRefresh
     const readingAge = this.state.updated ? now - Number(this.state.updated) : Infinity;
     if (
       readingAge >= 6 * 60 * 1000 &&
       now - this.lastRefreshRequestedAt >= 2 * 60 * 1000
     )
       this.requestDataRefresh();
+    // @endif
     const staleChanged = this.updateStaleState(now);
     this.requestRender(staleChanged ? 3 : 2);
   }
@@ -803,7 +899,7 @@ class CrimsonBearWatchface {
     );
     this.text("SET UP REQUIRED", this.fonts.delta, this.colors.white, center, 55, true);
     this.text(
-      "Open Pebble on phone",
+      @FALLBACK_APP_TEXT@,
       this.fonts.label,
       this.colors.pale,
       center,
@@ -811,7 +907,7 @@ class CrimsonBearWatchface {
       true
     );
     this.text(
-      "Open CrimsonBear Cgm",
+      @FALLBACK_NAME_TEXT@,
       this.fonts.label,
       this.colors.white,
       center,

@@ -7,7 +7,6 @@ class AdaptiveRefreshScheduler {
   }
 
   schedule(data, error) {
-    if (this.timer) clearTimeout(this.timer);
     const now = Date.now();
     let delay = error ? 60000 : 5 * 60000;
     if (data) {
@@ -32,9 +31,18 @@ class AdaptiveRefreshScheduler {
         now - Number(data.updated)
       );
     }
-    this.diagnostics.data.phone.adaptiveTimerDelayMs = delay;
+    this.scheduleIn(delay);
+  }
+
+  scheduleIn(delay) {
+    if (this.timer) clearTimeout(this.timer);
+    const safeDelay = Math.max(1000, Number(delay) || 60000);
+    this.diagnostics.data.phone.adaptiveTimerDelayMs = safeDelay;
     this.diagnostics.save();
-    this.timer = setTimeout(this.refresh, delay);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.refresh();
+    }, safeDelay);
   }
 }
 
