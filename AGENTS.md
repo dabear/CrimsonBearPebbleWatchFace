@@ -71,3 +71,4 @@
   | **Fixed total**      |                        |           | **15,167,340** | **21,006,940** |
 - Keep exactly two screenshot assets per variant: normal graph mode and fullscreen mode. CrimsonBear publishing uploads its two `emery_` screenshots with `--replace-screenshots`; Luped remains local-only until a store publishing workflow is configured.
 - RePebble rejects publishing a release version that already exists; screenshot-only store updates require a new CrimsonBear patch version before retrying publication.
+- Luped alarm palette is variant-specific: low glucose uses red (`low`), high glucose uses yellow (`high`), and both the ring and glucose value obtain their color from the shared `glucoseColor()` path.

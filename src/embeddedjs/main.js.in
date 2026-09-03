@@ -44,8 +44,8 @@ class CrimsonBearWatchface {
       pale: this.render.makeColor(@COLOR_PALE@),
       white: this.render.makeColor(255, 255, 255),
       bluetooth: this.render.makeColor(0, 128, 255),
-      low: this.render.makeColor(128, 0, 32),
-      high: this.render.makeColor(255, 96, 48),
+      low: this.render.makeColor(@COLOR_LOW@),
+      high: this.render.makeColor(@COLOR_HIGH@),
     };
     this.state = {
       glucose: null,
@@ -470,13 +470,7 @@ class CrimsonBearWatchface {
     const outerRadius = radius - 3;
     const ringWidth = Math.min(10, Math.max(9, Math.round(outerRadius * 0.12)));
     const glucose = Number(this.state.glucose);
-    const ringColor = this.stale
-      ? this.colors.graph
-      : glucose <= Number(this.state.low)
-        ? this.colors.low
-        : glucose >= Number(this.state.high)
-          ? this.colors.high
-          : this.colors.crimson;
+    const ringColor = this.stale ? this.colors.graph : this.glucoseColor(glucose);
     this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, 0, 360);
     this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, 0, 360);
     this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);

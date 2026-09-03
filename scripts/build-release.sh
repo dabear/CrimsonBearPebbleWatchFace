@@ -178,6 +178,8 @@ const replacements = {
   COLOR_GRAPH: color("graph"),
   COLOR_PANEL: color("panel"),
   COLOR_PALE: color("pale"),
+  COLOR_LOW: color("low"),
+  COLOR_HIGH: color("high"),
   SETUP_APP_TEXT: JSON.stringify(config.text.setupApp),
   SETTINGS_TEXT: JSON.stringify(config.text.settings),
   SETUP_ACTION_TEXT: JSON.stringify(config.text.setupAction),
