@@ -75,6 +75,7 @@ class CrimsonBearWatchface {
     this.pendingMinuteRender = false;
     this.renderTimer = null;
     this.renderRetryCount = 0;
+    this.lastRenderedFullScreen = null;
     this.refreshPending = true;
     this.lastRefreshRequestedAt = 0;
     this.refreshStartedAt = 0;
@@ -97,6 +98,7 @@ class CrimsonBearWatchface {
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
+      this.lastRenderedFullScreen = null;
       this.footerState = {
         clock: null,
         date: null,
@@ -570,15 +572,27 @@ class CrimsonBearWatchface {
     ).padStart(2, "0")}`;
   }
 
-  drawCgmStatus(x, y, width, height) {
-    this.render.fillRectangle(this.colors.ink, x, y, width, height);
+  drawCgmStatus(x, y, width, height, drawBackground = true) {
+    // Geometry and background are fixed for a layout; only the timestamp is
+    // dynamic. Keep this strip narrow and behind the ring in graph mode.
     const value = this.readingTime();
     const right = x + width - 5;
+    const textWidth = this.render.getTextWidth(value, this.fonts.status);
+    if (drawBackground)
+      this.render.fillRectangle(this.colors.ink, x, y, width, height);
+    else
+      this.render.fillRectangle(
+        this.colors.ink,
+        right - textWidth - 2,
+        y,
+        textWidth + 2,
+        height
+      );
     this.text(
       value,
       this.fonts.status,
       this.colors.white,
-      right - this.render.getTextWidth(value, this.fonts.status),
+      right - textWidth,
       y + 1
     );
   }
@@ -656,12 +670,12 @@ class CrimsonBearWatchface {
 
   // Complete watchface layouts
 
-  fullScreenFace(width, height, footerHeight, now, drawFooter) {
+  fullScreenFace(width, height, footerHeight, now, drawFooter, preserveStatic) {
     const contentHeight = height - footerHeight;
     const cx = width >> 1;
     const radius = (width >> 1) - 9;
     const cy = contentHeight - radius;
-    this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    if (!preserveStatic) this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     // @if luped
     this.drawVariantRing(cx, cy, radius);
     // @else
@@ -676,7 +690,7 @@ class CrimsonBearWatchface {
       this.fonts.delta,
       this.stale ? this.colors.low : this.colors.ink,
       cx,
-      cy + 18,
+      cy + 14,
       true
     );
     this.text(
@@ -684,7 +698,7 @@ class CrimsonBearWatchface {
       this.fonts.status,
       this.stale ? this.colors.low : this.colors.ink,
       cx,
-      cy + 47,
+      cy + 39,
       true
     );
     if (!this.stale)
@@ -698,7 +712,7 @@ class CrimsonBearWatchface {
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
-  face(drawFooter = true) {
+  face(drawFooter = true, preserveStatic = false) {
     const { width, height } = this.render;
     const footerHeight = 30;
     const headerHeight = Math.round(height * 0.54);
@@ -709,7 +723,7 @@ class CrimsonBearWatchface {
     }
 
     if (this.state.fullScreen) {
-      this.fullScreenFace(width, height, footerHeight, now, drawFooter);
+      this.fullScreenFace(width, height, footerHeight, now, drawFooter, preserveStatic);
       return;
     }
     const radius = Math.min(58, Math.round(headerHeight * 0.47));
@@ -718,8 +732,8 @@ class CrimsonBearWatchface {
     const statusHeight = 17;
     const statusY = cy + radius - 14;
     const graphY = statusY + statusHeight;
-    this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
-    this.drawCgmStatus(0, statusY, width, statusHeight);
+    if (!preserveStatic) this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    this.drawCgmStatus(0, statusY, width, statusHeight, !preserveStatic);
     // @if luped
     this.drawVariantRing(cx, cy, radius);
     // @else
@@ -735,7 +749,7 @@ class CrimsonBearWatchface {
       this.fonts.delta,
       this.stale ? this.colors.low : this.colors.ink,
       cx,
-      cy + 18,
+      cy + 14,
       true
     );
     if (!this.stale)
@@ -785,7 +799,10 @@ class CrimsonBearWatchface {
 
   drawNow() {
     const startedAt = Date.now();
-    const contentOnly = this.state.configured && this.hasRenderedConfiguredFace;
+    const contentOnly =
+      this.state.configured &&
+      this.hasRenderedConfiguredFace &&
+      this.lastRenderedFullScreen === this.state.fullScreen;
     const invalidatedPixels =
       this.render.width * (contentOnly ? this.render.height - 30 : this.render.height);
     let began = false;
@@ -794,10 +811,11 @@ class CrimsonBearWatchface {
         this.render.begin(0, 0, this.render.width, this.render.height - 30);
       else this.render.begin();
       began = true;
-      this.face(!contentOnly);
+      this.face(!contentOnly, contentOnly);
       began = false;
       this.render.end();
       this.hasRenderedConfiguredFace = this.state.configured;
+      this.lastRenderedFullScreen = this.state.fullScreen;
       this.recordDraw("full", startedAt, invalidatedPixels);
       this.renderRetryCount = 0;
     } catch (error) {

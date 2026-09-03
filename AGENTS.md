@@ -24,6 +24,7 @@
 - The CGM reading timestamp is absolute local `HH:mm`, not relative age, and is updated only by a CGM/content render—not by the footer minute render.
 - Graph mode follows the CGM Skyline hierarchy: bold glucose centered in the ring, a smaller delta below it, and a narrow reading-time strip rendered behind the lower part of the ring.
 - Full-screen mode has no reading-time strip. Put the reading time inside the ring below the delta, and make the ring meet the footer without a gap.
+- Once a configured face has rendered, preserve the pale content background and fixed status-strip fill during content updates; clear/redraw only the changing timestamp and dynamic ring/graph pixels. Initial setup, resize, and fullscreen/layout transitions still require the static layers.
 
 ## Emulator verification
 
