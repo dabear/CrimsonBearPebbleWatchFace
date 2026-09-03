@@ -32,3 +32,13 @@
 - The first frame immediately after install can be blank or show setup while the 400 ms coalesced render is pending. Capture again after the app settles before diagnosing a rendering failure.
 - Open each requested screenshot automatically on macOS after capture.
 - Never leave sample glucose data, forced `configured`, forced `fullScreen`, or diagnostic rendering changes in production source.
+
+## CloudPebble and emulator operations
+
+- CloudPebble installation requires `pebble login` first; the login flow authenticates through Firebase/GitHub and may open a browser.
+- Install a phone build with `pebble install build/pebble.pbw --cloudpebble`. Confirm the proxy authenticates, the phone connects, and `App install succeeded` appears.
+- CrimsonBear and Luped use different UUIDs. Installing one does not reliably make it the active emulator watchface when the other is already running; use `pebble wipe` (without `--emulator`) and `pebble kill`, then install the intended PBW alone for unambiguous screenshots.
+- `pebble wipe` has no `--emulator` option; it resets the current disposable emulator state. Do not use `--everything` unless account data and all SDK-version state may be removed.
+- After installing or injecting data, wait for the app’s coalesced render before capturing. A setup, blank, or stale frame immediately after the command can be transient.
+- When a screenshot is requested, save it under `assets/`, open it with macOS `open`, and inspect the image contents before reporting visual verification.
+- For Luped, the CLI cannot reliably inject named AppMessage fields because it has no PebbleKit JS companion. Use a temporary source-level sample state only for visual checks, then restore defaults and rebuild the production PBW.
