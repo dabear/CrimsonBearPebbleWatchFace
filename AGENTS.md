@@ -1,5 +1,11 @@
 # Project guidance
 
+## Keeping this file current
+
+- Whenever a task reveals a new project, build, emulator, rendering, integration, or workflow fact, update this file during the same task before handing off.
+- Include the operational consequence, command or invariant when useful, and keep the guidance concise and actionable.
+- If the task includes a commit or push, include the `AGENTS.md` update in that same commit.
+
 ## Builds
 
 - Treat `crimsonbear` as the standard variant and `luped` as the standalone Loop variant.
