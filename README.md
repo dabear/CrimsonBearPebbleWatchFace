@@ -19,7 +19,7 @@ A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It
   </tr>
 </table>
 
-On first launch, the watch displays a prominent setup notice directing the user to the watchface settings in the Pebble phone app.
+On first launch, the watch displays a setup notice only after the phone confirms that configuration is missing. During the initial phone handshake it shows a neutral connecting state.
 
 ## Supported watches
 
@@ -82,6 +82,7 @@ Flags run non-interactively and can be combined. For example:
 ```sh
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --install
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --minify
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --minify --skip-deps
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --publish --release-notes "Release notes"
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --install --publish --release-notes "Release notes"
 ```
@@ -93,6 +94,12 @@ store. Existing store screenshots are preserved. If release notes are omitted in
 flag mode, the latest commit subject is used. `--publish` does not install on a
 phone and does not require `--build`; the Pebble publisher performs its own required
 package build before upload.
+
+For faster repeated local builds, `--skip-deps` reuses `node_modules` only when
+`npm ls` succeeds and npm's installed lock data exactly matches `package-lock.json`.
+It fails with instructions to run `npm ci` if dependencies are missing, invalid,
+or stale. Publishing never permits this shortcut and always performs clean
+dependency validation.
 
 Pass `--minify` with `--build` or `--publish` to run Terser's safe compression
 and internal identifier mangling over the generated watch modules and staged
@@ -132,4 +139,4 @@ source-text search-and-replace, or runtime variant module overhead.
 
 ## Development notes
 
-The shared watch code is in `src/embeddedjs/main.js.in`; phone networking and configuration are in `src/pkjs/index.js`. The watch requests a refresh at launch, the phone refreshes every five minutes, and the display calculates reading age locally every minute. Minute, battery, and duplicate-data updates use coalesced partial redraws to reduce display work and avoid overlapping Alloy output transactions.
+The shared watch code is in `src/embeddedjs/main.js.in`; phone networking and configuration are in `src/pkjs/index.js`. The watch owns ongoing CGM polling: it requests when the displayed reading reaches six minutes old and throttles continued stale-reading retries to five-minute intervals. The phone performs one startup fetch when PebbleKit JS becomes ready but runs no polling scheduler. Sensor reading age is calculated locally every minute for refresh and stale-state behavior. Minute, battery, and duplicate-data updates use coalesced partial redraws to reduce display work and avoid overlapping Alloy output transactions.

@@ -4,8 +4,6 @@
   "colors": {
     "ink": [64, 0, 16],
     "ringBorder": [64, 0, 16],
-    "ringShadow": [64, 0, 16],
-    "ringHighlight": [192, 0, 48],
     "accent": [192, 0, 48],
     "graph": [248, 160, 176],
     "panel": [255, 255, 255],

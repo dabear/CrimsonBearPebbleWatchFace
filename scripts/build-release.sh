@@ -8,13 +8,14 @@ do_build=false
 do_install=false
 do_publish=false
 do_minify=false
+skip_deps=false
 release_notes=""
 interactive=false
 variant="crimsonbear"
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--publish] [--minify] [--release-notes TEXT]
+Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--publish] [--minify] [--skip-deps] [--release-notes TEXT]
 
 With no arguments, the script interactively selects actions. Explicit action flags
 run without prompts. --install targets the connected phone; --publish pushes main
@@ -22,6 +23,8 @@ to GitHub and publishes the release to the RePebble store without requiring
 --build or --install. Publishing is available only for CrimsonBear. The Pebble
 publisher still performs its mandatory package build. --minify safely compresses
 and mangles internal watch JavaScript identifiers without mangling protocol properties.
+--skip-deps avoids reinstalling dependencies for local builds only after validating
+that node_modules exactly matches package-lock.json; it is not allowed with --publish.
 EOF
 }
 
@@ -42,6 +45,7 @@ else
       --install) do_install=true ;;
       --publish) do_publish=true ;;
       --minify) do_minify=true ;;
+      --skip-deps) skip_deps=true ;;
       --release-notes)
         if [[ $# -lt 2 ]]; then
           echo "--release-notes requires text." >&2
@@ -180,8 +184,6 @@ const replacements = {
   COLOR_PALE: color("pale"),
   COLOR_LOW: color("low"),
   COLOR_HIGH: color("high"),
-  COLOR_RING_SHADOW: color("ringShadow"),
-  COLOR_RING_HIGHLIGHT: color("ringHighlight"),
   SETUP_APP_TEXT: JSON.stringify(config.text.setupApp),
   SETTINGS_TEXT: JSON.stringify(config.text.settings),
   SETUP_ACTION_TEXT: JSON.stringify(config.text.setupAction),
@@ -222,9 +224,62 @@ prepare_stage() {
   fi
 }
 
+verify_installed_dependencies() {
+  if [[ ! -f node_modules/.package-lock.json ]]; then
+    echo "--skip-deps requires an existing npm install; run npm ci first." >&2
+    return 1
+  fi
+  npm ls --all --include=dev >/dev/null
+  node <<'NODE'
+const fs = require("fs");
+
+const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));
+const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+const installed = JSON.parse(
+  fs.readFileSync("node_modules/.package-lock.json", "utf8")
+);
+const lockedRoot = (lock.packages || {})[""] || {};
+const expectedPackages = Object.fromEntries(
+  Object.entries(lock.packages || {}).filter(([path]) => path)
+);
+const dependencyKeys = ["dependencies", "devDependencies", "optionalDependencies"];
+const declarationsMatch = dependencyKeys.every(
+  (key) =>
+    JSON.stringify(manifest[key] || {}) === JSON.stringify(lockedRoot[key] || {})
+);
+if (
+  lock.name !== installed.name ||
+  !declarationsMatch ||
+  JSON.stringify(expectedPackages) !== JSON.stringify(installed.packages || {})
+) {
+  console.error(
+    "Installed dependencies do not exactly match package-lock.json; run npm ci first."
+  );
+  process.exit(1);
+}
+NODE
+  echo "Verified installed dependencies exactly match package-lock.json."
+}
+
+remove_stage_build_dependencies() {
+  node - "$stage/package.json" <<'NODE'
+const fs = require("fs");
+
+const packagePath = process.argv[2];
+const packageData = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+delete packageData.devDependencies;
+fs.writeFileSync(packagePath, `${JSON.stringify(packageData, null, 2)}\n`);
+NODE
+}
+
 if [[ "$do_publish" == true && "$variant" != "crimsonbear" ]]; then
   echo "Publishing is not configured for the Luped variant." >&2
   exit 1
+fi
+
+if [[ "$do_publish" == true && "$skip_deps" == true ]]; then
+  echo "--skip-deps is for local builds only and cannot be used with --publish." >&2
+  exit 2
 fi
 
 if [[ "$do_publish" == true ]]; then
@@ -241,14 +296,21 @@ fi
 
 if [[ "$do_build" == true || "$do_publish" == true ]]; then
   echo "Validating $display_name $version..."
-  npm ci
+  if [[ "$skip_deps" == true ]]; then
+    verify_installed_dependencies
+  else
+    npm ci
+  fi
   npm run lint
   npm run format:check
 fi
 
 if [[ "$do_build" == true || "$do_publish" == true ]]; then
   prepare_stage
-  npx eslint "$stage/src/embeddedjs/main.js"
+  if [[ "$skip_deps" == true ]]; then
+    remove_stage_build_dependencies
+  fi
+  npx --no-install eslint "$stage/src/embeddedjs/main.js"
   if [[ "$do_minify" == true ]]; then
     # Only these CrimsonBearWatchface prototype methods are eligible for property
     # mangling. State, diagnostics, AppMessage, Pebble and renderer properties are
@@ -262,7 +324,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
       if [[ "$watch_module" == "main" ]]; then
         terser_arguments+=(--mangle-props "regex=$private_watch_methods")
       fi
-      npx terser "$readable_module" "${terser_arguments[@]}" --output "$minified_module"
+      npx --no-install terser "$readable_module" "${terser_arguments[@]}" --output "$minified_module"
       minified_module_size="$(wc -c < "$minified_module" | tr -d ' ')"
       mv "$minified_module" "$readable_module"
       echo "Minified $watch_module.js: $readable_module_size -> $minified_module_size bytes."
@@ -271,7 +333,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
       for phone_module in "$stage"/src/pkjs/*.js; do
         minified_module="$phone_module.min"
         readable_module_size="$(wc -c < "$phone_module" | tr -d ' ')"
-        npx terser "$phone_module" \
+        npx --no-install terser "$phone_module" \
           --compress passes=3 \
           --mangle \
           --toplevel \

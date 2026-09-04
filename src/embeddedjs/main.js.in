@@ -6,6 +6,10 @@ import { expandData } from "protocol";
 
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
+// @if timedRefresh
+const WATCH_REFRESH_READING_AGE_MS = 6 * 60 * 1000;
+const WATCH_REFRESH_RETRY_MS = 5 * 60 * 1000;
+// @endif
 // Grace period to let diagnostics ride an already-outgoing message before
 // forcing a dedicated radio wake-up for telemetry alone.
 const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
@@ -65,6 +69,7 @@ class CrimsonBearWatchface {
       error: null,
       battery: 100,
     };
+    this.configurationKnown = false;
     this.alarmZone = "normal";
     this.lastAlarmAt = 0;
     this.stale = false;
@@ -87,7 +92,7 @@ class CrimsonBearWatchface {
     this.refreshPending = true;
     this.lastRefreshRequestedAt = 0;
     this.refreshStartedAt = 0;
-    this.isConnected = true;
+    this.isConnected = false;
     this.phoneDisconnectedAt = 0;
     this.telemetryPending = false;
     this.telemetryDueAt = 0;
@@ -473,12 +478,6 @@ class CrimsonBearWatchface {
     const ringColor = this.stale ? this.colors.graph : this.glucoseColor(glucose);
     this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, 0, 360);
     this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, 0, 360);
-    // Approximate Loop's dark-to-bright ring gradient with two lightweight
-    // arcs. Alert rings remain a single color so the ring matches the value.
-    if (!this.stale && glucose > Number(this.state.low) && glucose < Number(this.state.high)) {
-      this.render.drawCircle(this.colors.ringShadow, cx, cy, outerRadius - 1, 180, 360);
-      this.render.drawCircle(this.colors.ringHighlight, cx, cy, outerRadius - 1, 0, 180);
-    }
     this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);
     this.render.drawCircle(
       this.colors.white,
@@ -570,6 +569,13 @@ class CrimsonBearWatchface {
       199,
       true
     );
+  }
+
+  connectingScreen(width, height) {
+    const center = width >> 1;
+    this.render.fillRectangle(this.colors.ink, 0, 0, width, height);
+    this.text("CONNECTING", this.fonts.delta, this.colors.white, center, 84, true);
+    this.text("Waiting for CGM", this.fonts.label, this.colors.pale, center, 122, true);
   }
 
   // Shared status and age elements
@@ -728,6 +734,10 @@ class CrimsonBearWatchface {
     const footerHeight = 30;
     const headerHeight = Math.round(height * 0.54);
     const now = new Date();
+    if (!this.configurationKnown) {
+      this.connectingScreen(width, height);
+      return;
+    }
     if (!this.state.configured) {
       this.setupScreen(width, height);
       return;
@@ -899,10 +909,14 @@ class CrimsonBearWatchface {
     )
       this.flushOutbound();
     // @if timedRefresh
-    const readingAge = this.state.updated ? now - Number(this.state.updated) : Infinity;
+    const updated = Number(this.state.updated);
+    const readingAge =
+      Number.isFinite(updated) && updated > 0 ? Math.max(0, now - updated) : Infinity;
     if (
-      readingAge >= 6 * 60 * 1000 &&
-      now - this.lastRefreshRequestedAt >= 2 * 60 * 1000
+      this.isConnected &&
+      !this.refreshPending &&
+      readingAge >= WATCH_REFRESH_READING_AGE_MS &&
+      now - this.lastRefreshRequestedAt >= WATCH_REFRESH_RETRY_MS
     )
       this.requestDataRefresh();
     // @endif
@@ -1051,12 +1065,16 @@ class CrimsonBearWatchface {
         onWritable: () => this.flushOutbound(),
         onSuspend: () => this.setPhoneConnected(false),
       });
+      // onWritable may run synchronously inside the constructor, before the
+      // Message instance has been assigned to this.message.
+      this.flushOutbound();
     } catch (_) {
       // The service remains unavailable until the watchface restarts.
     }
   }
 
   requestDataRefresh() {
+    if (this.refreshPending) return;
     this.refreshPending = true;
     this.flushOutbound();
   }
@@ -1086,6 +1104,7 @@ class CrimsonBearWatchface {
         duration
       );
       this.phoneDisconnectedAt = 0;
+      this.flushOutbound();
     } else {
       this.phoneDisconnectedAt = now;
       this.countDiagnostic("phoneDisconnects");
@@ -1223,6 +1242,7 @@ class CrimsonBearWatchface {
             this.state.error != null;
           this.lastDataSignature = signature;
           Object.assign(this.state, data, { error: null });
+          this.refreshPending = false;
           needsFullDraw = this.updateStaleState() || needsFullDraw;
           receivedData = true;
         } catch (_) {
@@ -1230,11 +1250,17 @@ class CrimsonBearWatchface {
           this.state.error = "Bad response";
         }
       } else if (key === "ERROR") {
+        this.refreshPending = false;
+        this.refreshStartedAt = 0;
         needsFullDraw = needsFullDraw || this.state.error !== value;
         this.state.error = value;
       } else if (key === "CONFIGURED") {
         const configured = Boolean(value);
-        needsFullDraw = needsFullDraw || this.state.configured !== configured;
+        needsFullDraw =
+          needsFullDraw ||
+          !this.configurationKnown ||
+          this.state.configured !== configured;
+        this.configurationKnown = true;
         this.state.configured = configured;
       } else if (key === "COMMAND" && value === "diagnostics") {
         this.requestDiagnostics();

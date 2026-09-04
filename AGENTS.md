@@ -8,16 +8,19 @@
 
 ## Builds
 
-- Treat `crimsonbear` as the standard variant and `luped` as the standalone Loop variant.
+- Treat `crimsonbear` as the standard variant and `luped` as the standalone Loop variant. Build only `crimsonbear` unless the user explicitly requests Luped.
 - Use `PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant <variant> --build --minify` for release verification.
 - The Alloy resource pack must remain below 32,133 bytes on every platform. Report Alloy size, byte/percentage headroom, PBW size, and SHA-256 from the build summary.
 - Build both `emery` and `gabbro`; a successful build of only one platform is not sufficient.
 - Pebble Tool requires Python 3.10 on Apple Silicon (`uv tool install --python 3.10 pebble-tool`).
 - The macOS emulator also requires Homebrew `libpng`.
+- Release-build delays can come almost entirely from npm: the wrapper runs `npm ci`, and `pebble build` performs additional staged dependency checks. Warm-cache installs may finish in under a second, while a registry/cache validation can stall for about five minutes; Emery/Gabbro compilation itself typically takes under a second.
+- Use `--skip-deps` for repeated local builds only after a successful dependency install. It requires `npm ls --all` to pass and the installed hidden lock to exactly match `package-lock.json`, then removes build-only dependencies from the isolated stage to prevent Pebble Tool's redundant install. It is rejected for publishing.
 
 ## Variant boundaries
 
 - Variant selection happens while assembling `src/embeddedjs/main.js.in`; keep variant-only drawing and behavior inside the existing `// @if` sections.
+- Keep constants used only by variant-gated code inside the same `// @if` section; otherwise generated variants can fail lint with unused bindings.
 - CrimsonBear and Luped have separate UUIDs and can coexist. When emulator results look like the wrong variant, reset the disposable emulator state and install the intended PBW alone.
 - Luped has no PebbleKit JS companion (`enableMultiJS: false`). CLI AppMessage injection does not reliably reproduce its Loop integration. For screenshots, a temporary source-level sample state may be used, but restore all production defaults and rebuild the final artifact afterward.
 - For mmol/L visual fixtures, use mmol/L thresholds (for example urgent-low 3.0, low 4.0, high 10.0). Reusing mg/dL thresholds makes normal readings appear in the low/crimson color.
@@ -28,6 +31,7 @@
 - Clock, date, and battery comparisons happen only from `minutechange`, using `event.date`; redraw only the region whose value changed.
 - Connection changes redraw only the Bluetooth indicator region. Do not clear or redraw unrelated footer fields.
 - The CGM reading timestamp is absolute local `HH:mm`, not relative age, and is updated only by a CGM/content render—not by the footer minute render.
+- Treat the initial phone configuration state as unknown. Show the neutral connecting screen during the first handshake, and show setup instructions only after an explicit `CONFIGURED: 0` response.
 - Graph mode follows the CGM Skyline hierarchy: bold glucose centered in the ring, a smaller delta below it, and a narrow reading-time strip rendered behind the lower part of the ring.
 - Full-screen mode has no reading-time strip. Put the reading time inside the ring below the delta, and make the ring meet the footer without a gap.
 - Once a configured face has rendered, preserve the pale content background and fixed status-strip fill during content updates; clear/redraw only the changing timestamp and dynamic ring/graph pixels. Initial setup, resize, and fullscreen/layout transitions still require the static layers.
@@ -59,9 +63,11 @@
 - User-facing platform names are Pebble Time 2 (`emery`, 200×228) and Pebble Round 2 (`gabbro`, 260×260); use those names in reports instead of only the platform codenames.
 - Rendering uses a single-flight gate (`renderBusy`) with dirty/priority flags and zero-delay event-loop coalescing. The gate is cleared in `finally`, and queued work is serviced afterward; render-failure retries preserve their longer delay. A lock alone would drop updates or cause redundant retries.
 - `Battery` is sampled at most every `BATTERY_SAMPLE_INTERVAL_MS` (5 minutes) from the existing minute wake-up, not on every `minutechange`. Hourly diagnostics are marked pending (`telemetryPending`/`telemetryDueAt`) and ride the next outbound write (a refresh request or `onWritable` flush) instead of forcing their own; `DIAGNOSTICS_PIGGYBACK_GRACE_MS` (15 minutes) forces a dedicated flush only if nothing else has sent them by then. On-demand `COMMAND diagnostics` requests from the phone still flush immediately via `requestDiagnostics()`.
+- The watch owns ongoing CGM polling; the phone companion has no refresh scheduler. It performs one startup fetch on PebbleKit JS `ready`, then fetches only for watch requests or immediately after settings change. On each minute event, CrimsonBear requests when the displayed reading is at least 6 minutes old, which accommodates the normal 5-minute sensor cadence with ±15-second jitter, and throttles continued stale-reading retries to once every 5 minutes. Let message-service writability authorize outbound attempts because `watch.connected.app` can lag during startup; retain work when `message.write()` fails and retry from `onWritable` or reconnect.
+- Explicitly call `flushOutbound()` after assigning a newly constructed `Message`; its initial `onWritable` callback can run synchronously before `this.message` receives the instance and otherwise strand the startup request.
 - Remaining battery opportunity: splitting CGM content into smaller dirty regions where Poco layering permits. The zero-delay coalescer minimizes latency; a short 25–75 ms coalescing window is an optional burst-energy tradeoff.
 - After every release build, recompute and report the fixed daily pixel-redraw table below for both platforms (full frame + 288 CGM updates + 1,440 minute clock redraws + 1 date-rollover redraw; battery/Bluetooth redraws stay out of the fixed total since they're variable), diff it against the "Last recorded" table, call out any change (or state explicitly that there is none), and overwrite the "Last recorded" table with the new numbers and date/commit.
-- Last recorded fixed pixel-redraw table (2026-09-03, commit `14130f5` — no change to the fixed geometry below, since Loop-inspired ring shading does not alter rendering geometry):
+- Last recorded fixed pixel-redraw table (2026-09-04, commit `52fde2d` + uncommitted Luped ring shading removal, watch-owned CGM polling, 2.2.17 diagnostics cleanup, and guarded `--skip-deps` build option — no change to the fixed geometry below, since these changes do not alter invalidated regions):
   | Component            | Region                 | Count/day | Emery px/day   | Gabbro px/day  |
   | -------------------- | ---------------------- | --------- | -------------- | -------------- |
   | Full frame           | 200×228 / 260×260      | 1         | 45,600         | 67,600         |
@@ -72,4 +78,5 @@
 - Keep exactly two screenshot assets per variant: normal graph mode and fullscreen mode. CrimsonBear publishing uploads its two `emery_` screenshots with `--replace-screenshots`; Luped remains local-only until a store publishing workflow is configured.
 - RePebble rejects publishing a release version that already exists; screenshot-only store updates require a new CrimsonBear patch version before retrying publication.
 - Luped alarm palette is variant-specific: low glucose uses red (`low`), high glucose uses yellow (`high`), and both the ring and glucose value obtain their color from the shared `glucoseColor()` path.
-- Luped’s Loop-logo-inspired ring uses lightweight upper/lower arcs rather than a true gradient; normal values use dark-to-bright green shading, while low/high alert rings remain solid red/yellow to match the glucose value.
+- Luped rings are solid: normal glucose uses the shared green `accent`, low uses red (`low`), and high uses yellow (`high`) through `glucoseColor()`. Do not add gradient or shading arcs.
+- Emery/Gabbro are 6-bit color (2 bits per RGB channel: hardware quantizes every channel into 4 bins — 0–63, 64–127, 128–191, 192–255 — truncated to 0/85/170/255). Screenshot colors won't match source RGB values; use `pebble screenshot --no-correction` for the raw quantized framebuffer when verifying exact colors, since the default color-corrected output remaps them. This also caps how many visually distinct tones a gradient can show — more than 2–3 interpolated steps between close colors usually collapses back to the same 1–2 quantized buckets.

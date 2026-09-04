@@ -1,5 +1,4 @@
 /* Phone-side Nightscout and configuration bridge for CrimsonBear Cgm. */
-const AdaptiveRefreshScheduler = require("./adaptive-refresh-scheduler");
 const compactData = require("./protocol");
 const SettingsStore = require("./settings-store");
 
@@ -29,12 +28,6 @@ class DiagnosticStore {
         duplicatePayloads: 0,
         dataAgeMs: 0,
         dataAgeMaxMs: 0,
-        readingCadenceMs: 0,
-        currentFetchSkewMs: 0,
-        fetchSkewMaxMs: 0,
-        readingAgeAtFetchMs: 0,
-        adaptiveTimerDelayMs: 0,
-        duplicateReadingRetries: 0,
         watchRestarts: 0,
       },
       watch: [],
@@ -201,7 +194,7 @@ class DiagnosticStore {
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.12",
+        version: "2.2.17",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,
@@ -327,12 +320,11 @@ class CrimsonBearCompanion {
     this.fetchInFlight = false;
     this.lastFetchStartedAt = 0;
     this.lastResponsePayload = null;
-    this.scheduler = new AdaptiveRefreshScheduler(this.diagnostics, () =>
-      this.refresh("timer")
-    );
   }
 
   start() {
+    // Seed the watch once when PebbleKit JS starts. Ongoing polling remains
+    // watch-owned; there is deliberately no phone timer or scheduler.
     Pebble.addEventListener("ready", () => this.refresh("ready"));
     Pebble.addEventListener("appmessage", (event) => {
       this.diagnostics.increment("incomingWatchMessages");
@@ -386,28 +378,21 @@ class CrimsonBearCompanion {
     );
   }
 
-  refresh(source = "timer") {
+  refresh(source = "watch") {
     const now = Date.now();
-    if (this.fetchInFlight) {
-      if (source === "timer") this.scheduler.scheduleIn(10000);
-      return;
-    }
+    if (this.fetchInFlight) return;
     const sinceLastFetch = now - this.lastFetchStartedAt;
     if (source !== "settings" && sinceLastFetch < 60 * 1000) {
-      // A watch request still needs a response, but the fallback phone timer
-      // can simply reuse the recent fetch on its next interval. A timer that
-      // fired just before the throttle boundary must replace itself.
+      // A repeated watch request still gets the most recent response without
+      // causing another Nightscout request inside the one-minute guard.
       if (source === "watch" && this.lastResponsePayload)
         this.send(this.lastResponsePayload);
-      if (source === "timer")
-        this.scheduler.scheduleIn(60 * 1000 - Math.max(0, sinceLastFetch) + 100);
       return;
     }
     this.diagnostics.increment("fetches");
     if (!this.settings.endpoint) {
       this.diagnostics.increment("fetchErrors");
       this.send({ CONFIGURED: 0, ERROR: "Open phone settings" });
-      this.scheduler.schedule(null, new Error("Not configured"));
       return;
     }
     const startedAt = now;
@@ -443,7 +428,6 @@ class CrimsonBearCompanion {
         ? { CONFIGURED: 1, ERROR: error.message }
         : { CONFIGURED: 1, DATA: JSON.stringify(compactData(data)) };
       this.send(this.lastResponsePayload);
-      this.scheduler.schedule(data, error);
     });
   }
 
