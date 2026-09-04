@@ -7,8 +7,9 @@ import { expandData } from "protocol";
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
 // @if timedRefresh
-const WATCH_REFRESH_READING_AGE_MS = 6 * 60 * 1000;
-const WATCH_REFRESH_RETRY_MS = 5 * 60 * 1000;
+const WATCH_REFRESH_READING_AGE_MS = 5 * 60 * 1000;
+const WATCH_REFRESH_QUICK_RETRY_AGE_MS = 6 * 60 * 1000;
+const WATCH_REFRESH_STALE_RETRY_MS = 5 * 60 * 1000;
 // @endif
 // Grace period to let diagnostics ride an already-outgoing message before
 // forcing a dedicated radio wake-up for telemetry alone.
@@ -912,11 +913,16 @@ class CrimsonBearWatchface {
     const updated = Number(this.state.updated);
     const readingAge =
       Number.isFinite(updated) && updated > 0 ? Math.max(0, now - updated) : Infinity;
+    const refreshDue =
+      readingAge >= WATCH_REFRESH_READING_AGE_MS &&
+      (!this.lastRefreshRequestedAt ||
+        (this.lastRefreshRequestedAt < updated + WATCH_REFRESH_QUICK_RETRY_AGE_MS &&
+          readingAge >= WATCH_REFRESH_QUICK_RETRY_AGE_MS) ||
+        now - this.lastRefreshRequestedAt >= WATCH_REFRESH_STALE_RETRY_MS);
     if (
       this.isConnected &&
       !this.refreshPending &&
-      readingAge >= WATCH_REFRESH_READING_AGE_MS &&
-      now - this.lastRefreshRequestedAt >= WATCH_REFRESH_RETRY_MS
+      refreshDue
     )
       this.requestDataRefresh();
     // @endif
@@ -1236,12 +1242,14 @@ class CrimsonBearWatchface {
         try {
           const data = expandData(JSON.parse(value));
           const signature = JSON.stringify(data);
+          const readingAdvanced = Number(data.updated) !== Number(this.state.updated);
           needsFullDraw =
             needsFullDraw ||
             signature !== this.lastDataSignature ||
             this.state.error != null;
           this.lastDataSignature = signature;
           Object.assign(this.state, data, { error: null });
+          if (readingAdvanced) this.lastRefreshRequestedAt = 0;
           this.refreshPending = false;
           needsFullDraw = this.updateStaleState() || needsFullDraw;
           receivedData = true;

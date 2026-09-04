@@ -382,9 +382,9 @@ class CrimsonBearCompanion {
     const now = Date.now();
     if (this.fetchInFlight) return;
     const sinceLastFetch = now - this.lastFetchStartedAt;
-    if (source !== "settings" && sinceLastFetch < 60 * 1000) {
+    if (source !== "settings" && sinceLastFetch < 30 * 1000) {
       // A repeated watch request still gets the most recent response without
-      // causing another Nightscout request inside the one-minute guard.
+      // causing another Nightscout request inside the startup-burst guard.
       if (source === "watch" && this.lastResponsePayload)
         this.send(this.lastResponsePayload);
       return;
