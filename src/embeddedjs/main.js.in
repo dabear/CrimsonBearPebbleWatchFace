@@ -1006,39 +1006,6 @@ class CrimsonBearWatchface {
     }
   }
 
-  // Unconfigured fallback screen
-
-  fallback() {
-    const center = this.render.width >> 1;
-    this.render.begin();
-    this.render.fillRectangle(
-      this.colors.ink,
-      0,
-      0,
-      this.render.width,
-      this.render.height
-    );
-    this.text("SET UP REQUIRED", this.fonts.delta, this.colors.white, center, 55, true);
-    this.text(
-      @FALLBACK_APP_TEXT@,
-      this.fonts.label,
-      this.colors.pale,
-      center,
-      101,
-      true
-    );
-    this.text(
-      @FALLBACK_NAME_TEXT@,
-      this.fonts.label,
-      this.colors.white,
-      center,
-      128,
-      true
-    );
-    this.text("Settings", this.fonts.delta, this.colors.white, center, 158, true);
-    this.render.end();
-  }
-
   // Watch hardware services
 
   startBatteryService() {

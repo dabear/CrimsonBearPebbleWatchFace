@@ -14,9 +14,7 @@
   "text": {
     "setupApp": "Open the Loop app",
     "settings": "Luped CGM settings",
-    "setupAction": "send watch settings",
-    "fallbackApp": "Open Loop on phone",
-    "fallbackName": "Open Luped CGM"
+    "setupAction": "send watch settings"
   },
   "compactGlucoseOffset": 35,
   "fullArrowScale": 1.25,

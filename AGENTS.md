@@ -11,6 +11,7 @@
 - Treat `crimsonbear` as the standard variant and `luped` as the standalone Loop variant. Build only `crimsonbear` unless the user explicitly requests Luped.
 - Use `PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant <variant> --build --minify` for release verification.
 - The Alloy resource pack must remain below 32,133 bytes on every platform. Report Alloy size, byte/percentage headroom, PBW size, and SHA-256 from the build summary.
+- CrimsonBear 2.2.18 uses 31,574 Alloy bytes after removing the unreachable legacy fallback renderer, leaving 559 bytes (1.74%) of headroom.
 - Build both `emery` and `gabbro`; a successful build of only one platform is not sufficient.
 - Pebble Tool requires Python 3.10 on Apple Silicon (`uv tool install --python 3.10 pebble-tool`).
 - The macOS emulator also requires Homebrew `libpng`.
@@ -69,7 +70,7 @@
 - Treat `Message.onWritable` as proof that the phone link recovered: set `isConnected` true and flush pending work. `onSuspend` sets it false; relying only on `watch.connected.app` events can leave stale/ERR recovery permanently disabled until watchface restart.
 - Remaining battery opportunity: splitting CGM content into smaller dirty regions where Poco layering permits. The zero-delay coalescer minimizes latency; a short 25–75 ms coalescing window is an optional burst-energy tradeoff.
 - After every release build, recompute and report the fixed daily pixel-redraw table below for both platforms (full frame + 288 CGM updates + 1,440 minute clock redraws + 1 date-rollover redraw; battery/Bluetooth redraws stay out of the fixed total since they're variable), diff it against the "Last recorded" table, call out any change (or state explicitly that there is none), and overwrite the "Last recorded" table with the new numbers and date/commit.
-- Last recorded fixed pixel-redraw table (2026-09-07, commit `af2fc9b` + uncommitted 2.2.18 AppMessage reconnection recovery fix; no change to the fixed geometry below):
+- Last recorded fixed pixel-redraw table (2026-09-07, commit `f3ec83d` + uncommitted dead fallback cleanup; no change to the fixed geometry below):
   | Component            | Region                 | Count/day | Emery px/day   | Gabbro px/day  |
   | -------------------- | ---------------------- | --------- | -------------- | -------------- |
   | Full frame           | 200×228 / 260×260      | 1         | 45,600         | 67,600         |

@@ -14,9 +14,7 @@
   "text": {
     "setupApp": "Open the Pebble app",
     "settings": "CrimsonBear Cgm settings",
-    "setupAction": "enter your data source",
-    "fallbackApp": "Open Pebble on phone",
-    "fallbackName": "Open CrimsonBear Cgm"
+    "setupAction": "enter your data source"
   },
   "compactGlucoseOffset": 45,
   "fullArrowScale": 1.25

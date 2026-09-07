@@ -187,8 +187,6 @@ const replacements = {
   SETUP_APP_TEXT: JSON.stringify(config.text.setupApp),
   SETTINGS_TEXT: JSON.stringify(config.text.settings),
   SETUP_ACTION_TEXT: JSON.stringify(config.text.setupAction),
-  FALLBACK_APP_TEXT: JSON.stringify(config.text.fallbackApp),
-  FALLBACK_NAME_TEXT: JSON.stringify(config.text.fallbackName),
   COMPACT_GLUCOSE_Y: `(cy - ${Number(config.compactGlucoseOffset)})`,
   FULL_ARROW_SCALE: arrowScale,
 };
@@ -315,7 +313,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
     # Only these CrimsonBearWatchface prototype methods are eligible for property
     # mangling. State, diagnostics, AppMessage, Pebble and renderer properties are
     # deliberately absent so the phone/mobile protocol and host APIs stay stable.
-    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|bearBackdrop|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|fallback|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|checkGlucoseAlarm|readMessages)$/'
+    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|bearBackdrop|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|checkGlucoseAlarm|readMessages)$/'
     for watch_module in main protocol; do
       readable_module="$stage/src/embeddedjs/$watch_module.js"
       minified_module="$stage/src/embeddedjs/$watch_module.min.js"
