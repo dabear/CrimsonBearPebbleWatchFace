@@ -1068,7 +1068,7 @@ class CrimsonBearWatchface {
       this.message = new Message({
         keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS"],
         onReadable: () => this.readMessages(),
-        onWritable: () => this.flushOutbound(),
+        onWritable: () => this.setPhoneConnected(true),
         onSuspend: () => this.setPhoneConnected(false),
       });
       // onWritable may run synchronously inside the constructor, before the
@@ -1097,7 +1097,10 @@ class CrimsonBearWatchface {
   }
 
   setPhoneConnected(connected) {
-    if (connected === this.isConnected) return;
+    if (connected === this.isConnected) {
+      if (connected) this.flushOutbound();
+      return;
+    }
     const now = Date.now();
     this.isConnected = connected;
     if (connected) {

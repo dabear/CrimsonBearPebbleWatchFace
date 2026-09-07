@@ -194,7 +194,7 @@ class DiagnosticStore {
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.17",
+        version: "2.2.18",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,
