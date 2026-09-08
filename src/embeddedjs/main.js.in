@@ -919,11 +919,9 @@ class CrimsonBearWatchface {
         (this.lastRefreshRequestedAt < updated + WATCH_REFRESH_QUICK_RETRY_AGE_MS &&
           readingAge >= WATCH_REFRESH_QUICK_RETRY_AGE_MS) ||
         now - this.lastRefreshRequestedAt >= WATCH_REFRESH_STALE_RETRY_MS);
-    if (
-      this.isConnected &&
-      !this.refreshPending &&
-      refreshDue
-    )
+    // Cached connection state can miss recovery. Probe the message service
+    // when due, and retry rejected writes from this existing minute event.
+    if (this.refreshPending || refreshDue)
       this.requestDataRefresh();
     // @endif
     const staleChanged = this.updateStaleState(now);
@@ -1047,7 +1045,6 @@ class CrimsonBearWatchface {
   }
 
   requestDataRefresh() {
-    if (this.refreshPending) return;
     this.refreshPending = true;
     this.flushOutbound();
   }
@@ -1248,6 +1245,9 @@ class CrimsonBearWatchface {
     }
     this.countDiagnostic("incomingMessages");
     this.addDiagnostic("incomingBytes", incomingBytes);
+    // Process the response first so reconnect flushing cannot resend a request
+    // that this message has already satisfied.
+    this.setPhoneConnected(true);
     if (receivedData) this.checkGlucoseAlarm();
     if (needsFullDraw) this.draw();
   }
