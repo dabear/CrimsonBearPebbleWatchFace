@@ -102,4 +102,31 @@ tick(18);
 assert.equal(sent, 3, "new reading resets the retry sequence");
 tick(19);
 assert.equal(sent, 4);
+const reply = (updated) => {
+  face.message.read = () => new Map([["DATA", JSON.stringify({ updated })]]);
+  face.readMessages();
+};
+const firstReading = face.state.updated;
+reply(firstReading);
+assert.equal(face.probeDelay, 60000, "missed first probe delays the next one");
+tick(20);
+assert.equal(sent, 4, "quick retry follows the learned delay");
+tick(21);
+assert.equal(sent, 5);
+reply(now);
+assert.equal(face.probeDelay, 60000, "retry responses do not change the delay");
+const readingAt = now;
+tick(26);
+assert.equal(sent, 5, "learned delay skips the early probe");
+tick(27);
+assert.equal(sent, 6);
+reply(readingAt + 5 * 60000);
+assert.equal(face.probeHits, 1, "first-probe hit is counted");
+for (let hit = 2; hit <= 6; hit++) {
+  face.lastRefreshRequestedAt = 0;
+  face.refreshPending = true;
+  face.flushOutbound();
+  reply(face.state.updated + 5 * 60000);
+}
+assert.equal(face.probeDelay, 0, "six straight hits probe earlier again");
 console.log("Refresh recovery and cadence checks passed");

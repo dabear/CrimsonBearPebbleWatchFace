@@ -172,20 +172,61 @@ class DiagnosticStore {
     return values[values.length - 1];
   }
 
+  batterySummary() {
+    // Charging splits the history into discharge segments. Each segment is
+    // measured between its first and last 1% drops, so the full-charge
+    // plateau and time spent before the next drop do not dilute the rate.
+    const samples = this.data.watch
+      .filter((entry) => Number(entry.at) > 0 && Number.isFinite(Number(entry.battery)))
+      .sort((a, b) => Number(a.at) - Number(b.at));
+    const segments = [];
+    let charges = 0;
+    let segment = null;
+    for (let index = 1; index < samples.length; index += 1) {
+      const previous = Number(samples[index - 1].battery);
+      const current = Number(samples[index].battery);
+      if (current > previous) {
+        // Consecutive rises belong to the same charge.
+        if (segment !== undefined) charges += 1;
+        segment = undefined;
+      } else if (current < previous) {
+        if (!segment) {
+          segment = { startAt: Number(samples[index].at), startPercent: current };
+          segments.push(segment);
+        }
+        segment.endAt = Number(samples[index].at);
+        segment.endPercent = current;
+      }
+    }
+    const measured = segments
+      .filter((item) => item.endAt > item.startAt)
+      .map((item) => ({
+        from: item.startAt,
+        to: item.endAt,
+        startPercent: item.startPercent,
+        endPercent: item.endPercent,
+        hours: Number(((item.endAt - item.startAt) / 3600000).toFixed(2)),
+      }));
+    if (!measured.length) return { charges, segments: [] };
+    const hours = measured.reduce((sum, item) => sum + item.hours, 0);
+    const lost = measured.reduce(
+      (sum, item) => sum + item.startPercent - item.endPercent,
+      0
+    );
+    const perHour = lost / hours;
+    return {
+      dischargeHours: Number(hours.toFixed(2)),
+      percentLost: lost,
+      percentPerHour: Number(perHour.toFixed(2)),
+      estimatedDays: Number((100 / perHour / 24).toFixed(1)),
+      charges,
+      segments: measured,
+    };
+  }
+
   export() {
     this.rollover();
-    const first = this.data.watch[0];
-    const last = this.data.watch[this.data.watch.length - 1];
-    let batterySummary = null;
-    if (first && last && Number(last.at) > Number(first.at)) {
-      const hours = (Number(last.at) - Number(first.at)) / 3600000;
-      const lost = Number(first.battery) - Number(last.battery);
-      batterySummary = {
-        observedHours: Number(hours.toFixed(2)),
-        percentLost: lost,
-        percentPerHour: Number((lost / hours).toFixed(2)),
-      };
-    }
+    const batterySummary = this.batterySummary();
     const phone = Object.assign({}, this.data.phone, {
       fetchP50Ms: this.percentile(this.data.phone.fetchLatencyBuckets, 0.5),
       fetchP95Ms: this.percentile(this.data.phone.fetchLatencyBuckets, 0.95),
@@ -194,7 +235,7 @@ class DiagnosticStore {
     return Object.assign(
       {
         app: "CrimsonBear Cgm",
-        version: "2.2.19",
+        version: "2.2.21",
         exportedAt: Date.now(),
         windowHours: 48,
         batterySummary,
