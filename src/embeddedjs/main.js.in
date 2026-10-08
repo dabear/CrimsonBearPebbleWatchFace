@@ -1172,14 +1172,27 @@ class CrimsonBearWatchface {
       this.lastAlarmAt = 0;
       return;
     }
+    // @if luped
+    if (!(this.state.alarmEnabled & (zone === "urgentLow" ? 1 : zone === "low" ? 2 : 4))) {
+    // @else
     if (!this.state.alarmEnabled) {
+    // @endif
       this.alarmZone = zone;
       this.lastAlarmAt = 0;
       return;
     }
 
+    // @if luped
+    const snoozeMinutes =
+      zone === "high"
+        ? this.state.highSnooze
+        : zone === "urgentLow"
+          ? this.state.urgentLowSnooze
+          : this.state.lowSnooze;
+    // @else
     const snoozeMinutes =
       zone === "high" ? this.state.highSnooze : this.state.lowSnooze;
+    // @endif
     const snoozeElapsed =
       Date.now() - this.lastAlarmAt >= Number(snoozeMinutes) * 60000;
     const changedZone = zone !== this.alarmZone;
@@ -1219,7 +1232,15 @@ class CrimsonBearWatchface {
           this.refreshStartedAt = 0;
         }
         try {
+          // @if luped
+          const values = JSON.parse(value);
+          const data = expandData(values);
+          // Loop sends a per-zone alarm bitmask and a separate urgent-low repeat.
+          data.alarmEnabled = values[9];
+          data.urgentLowSnooze = values[14] || data.lowSnooze;
+          // @else
           const data = expandData(JSON.parse(value));
+          // @endif
           const signature = JSON.stringify(data);
           const readingAdvanced = Number(data.updated) !== Number(this.state.updated);
           needsFullDraw =

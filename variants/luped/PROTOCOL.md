@@ -21,15 +21,20 @@ watch's one-time startup `COMMAND: "refresh"` request.
 |     6 | Urgent-low threshold                                                                          |
 |     7 | Low threshold                                                                                 |
 |     8 | High threshold                                                                                |
-|     9 | Vibration alarms enabled: `0` or `1`                                                          |
+|     9 | Vibration alarms bitmask: `1` urgent low, `2` low, `4` high (`0` disables all)                |
 |    10 | Low/urgent-low snooze minutes                                                                 |
 |    11 | High snooze minutes                                                                           |
 |    12 | Reading timestamp in Unix milliseconds                                                        |
 |    13 | Full-screen ring: `0` trend mode, `1` full-screen mode                                        |
+|    14 | Urgent-low repeat minutes (optional; defaults to index 10)                                    |
 
 The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
+
+Loop delivers these messages over its own PPoGATT session (the watch stays
+connected to the Pebble app at the same time); see `LUPED.md` in the Loop
+repository.
 
 There is no watch-side periodic glucose fetch timer in this variant. Glucose is
 pushed by Loop; the startup refresh request exists only to restore state after
