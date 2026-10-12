@@ -20,7 +20,7 @@ Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--ins
 With no arguments, the script interactively selects actions. Explicit action flags
 run without prompts. --install targets the connected phone; --publish pushes main
 to GitHub and publishes the release to the RePebble store without requiring
---build or --install. Publishing is available only for CrimsonBear. The Pebble
+--build or --install. Both variants publish under their own store listing. The Pebble
 publisher still performs its mandatory package build. --minify safely compresses
 and mangles internal watch JavaScript identifiers without mangling protocol properties.
 --skip-deps avoids reinstalling dependencies for local builds only after validating
@@ -121,10 +121,18 @@ if [[ "$variant" == "luped" ]]; then
   package_file="variants/luped/package.json"
   artifact="build/luped-cgm.pbw"
   display_name="Luped CGM"
+  screenshot_prefix="emery_luped"
+  store_icon_dir="variants/luped/assets"
+  store_icon_prefix="luped"
+  store_description="A Loop-styled CGM watchface for Pebble Time 2 and Pebble Round 2. Requires a direct watch connection from a supported iPhone app such as Loop or Trio; the watchface has no Pebble app settings and does not fetch glucose data on its own."
 else
   package_file="package.json"
   artifact="build/pebble.pbw"
   display_name="CrimsonBear Cgm"
+  screenshot_prefix="emery"
+  store_icon_dir="assets"
+  store_icon_prefix="crimsonbear"
+  store_description="A Nightscout CGM watchface for Pebble Time 2 and Pebble Round 2."
 fi
 version="$(node -p "require('./$package_file').version")"
 stage="build/variants/$variant/project"
@@ -270,11 +278,6 @@ fs.writeFileSync(packagePath, `${JSON.stringify(packageData, null, 2)}\n`);
 NODE
 }
 
-if [[ "$do_publish" == true && "$variant" != "crimsonbear" ]]; then
-  echo "Publishing is not configured for the Luped variant." >&2
-  exit 1
-fi
-
 if [[ "$do_publish" == true && "$skip_deps" == true ]]; then
   echo "--skip-deps is for local builds only and cannot be used with --publish." >&2
   exit 2
@@ -408,9 +411,12 @@ if [[ "$do_publish" == true ]]; then
       --non-interactive \
       --no-gif-all-platforms \
       --screenshots \
-        "$repo_root/assets/emery_graph_screenshot.png" \
-        "$repo_root/assets/emery_fullscreen_screenshot.png" \
+        "$repo_root/assets/${screenshot_prefix}_graph_screenshot.png" \
+        "$repo_root/assets/${screenshot_prefix}_fullscreen_screenshot.png" \
       --replace-screenshots \
+      --description "$store_description" \
+      --icon-small "$repo_root/$store_icon_dir/$store_icon_prefix-store-icon-small.png" \
+      --icon-large "$repo_root/$store_icon_dir/$store_icon_prefix-store-icon-large.png" \
       --release-notes "$release_notes"
   )
 fi

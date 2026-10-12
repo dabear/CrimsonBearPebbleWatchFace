@@ -1,8 +1,8 @@
 # Luped CGM mobile protocol
 
 Luped CGM intentionally contains no PebbleKit JS companion and exposes no
-settings page in the Pebble app. A future Loop mobile integration owns settings,
-alarms and glucose delivery.
+settings page in the Pebble app. A supported mobile app such as Loop or Trio
+owns settings, alarms and glucose delivery over a direct watch connection.
 
 The mobile app should send `CONFIGURED: 1` and a `DATA` JSON array whenever
 settings change, when a new glucose sample arrives, and in response to the

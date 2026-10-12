@@ -122,10 +122,13 @@ PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant crimsonbe
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant luped --build
 ```
 
-Add `--install` to install the selected build. Luped is
+Luped needs a direct watch connection from a supported iPhone app such as Loop
+or Trio; it has no PebbleKit JS companion and does not fetch glucose on its own.
+Add `--install` to install the selected build, or `--publish` to publish the
+selected variant to the RePebble store. Luped is
 written to `build/luped-cgm.pbw`; CrimsonBear remains `build/pebble.pbw`. The
-variants have independent UUIDs and can be installed together. The future Loop
-mobile integration contract is documented in
+variants have independent UUIDs and can be installed together. The mobile
+integration contract is documented in
 [`variants/luped/PROTOCOL.md`](variants/luped/PROTOCOL.md).
 
 The shell script selects
