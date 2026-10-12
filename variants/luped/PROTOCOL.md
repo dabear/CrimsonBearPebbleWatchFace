@@ -28,6 +28,10 @@ watch's one-time startup `COMMAND: "refresh"` request.
 |    13 | Full-screen ring: `0` trend mode, `1` full-screen mode                                        |
 |    14 | Urgent-low repeat minutes (optional; defaults to index 10)                                    |
 
+Index 9 controls glucose alarms only. Since Luped 0.1.1, the watch always gives
+one short buzz when its latest reading becomes 15 minutes old, whatever the
+mask.
+
 The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.

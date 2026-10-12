@@ -1146,7 +1146,13 @@ class CrimsonBearWatchface {
     this.stale = stale;
     if (stale) {
       this.countDiagnostic("staleTransitions");
+      // @if luped
+      // The no-recent-data buzz ignores Loop's alarm mask, which is 0 while
+      // Loop's alerts are muted or watch alarms are off.
+      {
+      // @else
       if (this.state.alarmEnabled) {
+      // @endif
         this.countDiagnostic("staleAlarms");
         Vibes.shortPulse();
       }
