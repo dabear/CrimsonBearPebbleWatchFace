@@ -15,6 +15,25 @@ const WATCH_REFRESH_STALE_RETRY_MS = 5 * 60 * 1000;
 // forcing a dedicated radio wake-up for telemetry alone.
 const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
 
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Trend-arrow stroke tables are constant; keep them out of the per-draw path.
+const ARROW_GLYPHS = {
+  DoubleUp: [
+    [-6, 13, -6, -4, -6, -14, 6],
+    [6, 13, 6, -4, 6, -14, 6],
+  ],
+  SingleUp: [[0, 15, 0, -3, 0, -16, 9]],
+  FortyFiveUp: [[-12, 12, 2, -2, 13, -13, 8]],
+  Flat: [[-15, 0, 3, 0, 16, 0, 9]],
+  FortyFiveDown: [[-12, -12, 2, 2, 13, 13, 8]],
+  SingleDown: [[0, -15, 0, 3, 0, 16, 9]],
+  DoubleDown: [
+    [-6, -13, -6, 4, -6, 14, 6],
+    [6, -13, 6, 4, 6, 14, 6],
+  ],
+};
+
 function vibe() {
   const p = [300];
   let n = 8;
@@ -80,6 +99,7 @@ class CrimsonBearWatchface {
       date: null,
       battery: null,
       batteryWidth: 0,
+      clockWidth: 0,
       connected: null,
     };
     this.pendingMinuteDate = null;
@@ -128,6 +148,7 @@ class CrimsonBearWatchface {
         date: null,
         battery: null,
         batteryWidth: 0,
+        clockWidth: 0,
         connected: null,
       };
       this.draw();
@@ -319,22 +340,7 @@ class CrimsonBearWatchface {
   }
 
   arrow(cx, cy, direction, color, scale = 1) {
-    const glyphs = {
-      DoubleUp: [
-        [-6, 13, -6, -4, -6, -14, 6],
-        [6, 13, 6, -4, 6, -14, 6],
-      ],
-      SingleUp: [[0, 15, 0, -3, 0, -16, 9]],
-      FortyFiveUp: [[-12, 12, 2, -2, 13, -13, 8]],
-      Flat: [[-15, 0, 3, 0, 16, 0, 9]],
-      FortyFiveDown: [[-12, -12, 2, 2, 13, 13, 8]],
-      SingleDown: [[0, -15, 0, 3, 0, 16, 9]],
-      DoubleDown: [
-        [-6, -13, -6, 4, -6, 14, 6],
-        [6, -13, 6, 4, 6, 14, 6],
-      ],
-    };
-    const glyph = glyphs[direction];
+    const glyph = ARROW_GLYPHS[direction];
     if (!glyph) {
       this.text("?", this.fonts.delta, color, cx, cy - 12, true);
       return;
@@ -377,7 +383,7 @@ class CrimsonBearWatchface {
 
   // Trend graph
 
-  graphPoint(value, index, count, bounds) {
+  graphDomain() {
     const mmol = this.state.units === "mmol/L";
     const margin = mmol ? 1.1 : 20;
     const floor = mmol ? 2.2 : 40;
@@ -390,6 +396,10 @@ class CrimsonBearWatchface {
       minimum + margin,
       Math.min(ceiling, Math.max(this.state.high + margin, ...this.state.readings))
     );
+    return { minimum, maximum };
+  }
+
+  graphPoint(value, index, count, bounds, minimum, maximum) {
     return {
       x: Math.round(
         bounds.x + (count < 2 ? bounds.width : (index * bounds.width) / (count - 1))
@@ -427,8 +437,9 @@ class CrimsonBearWatchface {
       width: width - 16,
       height: height - 14,
     };
+    const { minimum, maximum } = this.graphDomain();
     const points = values.map((value, index) =>
-      this.graphPoint(value, index, values.length, bounds)
+      this.graphPoint(value, index, values.length, bounds, minimum, maximum)
     );
     for (let index = 1; index < points.length; index += 1) {
       this.render.drawLine(
@@ -627,7 +638,6 @@ class CrimsonBearWatchface {
     const clock = `${String(now.getHours()).padStart(2, "0")}:${String(
       now.getMinutes()
     ).padStart(2, "0")}`;
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     this.render.fillRectangle(
       this.colors.ink,
       0,
@@ -636,7 +646,7 @@ class CrimsonBearWatchface {
       footerHeight
     );
     this.text(
-      `${days[now.getDay()]} ${now.getDate()}`,
+      `${DAYS[now.getDay()]} ${now.getDate()}`,
       this.fonts.label,
       // @if luped
       this.colors.pale,
@@ -651,12 +661,12 @@ class CrimsonBearWatchface {
       clock,
       this.fonts.footer,
       this.colors.white,
-      width / 2,
-      height - footerHeight,
-      true
+      (width >> 1) - (clockWidth >> 1),
+      height - footerHeight
     );
     const battery = `${this.state.battery}%`;
-    const batteryLeft = width - 5 - this.render.getTextWidth(battery, this.fonts.label);
+    const batteryWidth = this.render.getTextWidth(battery, this.fonts.label);
+    const batteryLeft = width - 5 - batteryWidth;
     this.text(
       battery,
       this.fonts.label,
@@ -668,15 +678,18 @@ class CrimsonBearWatchface {
       batteryLeft,
       height - footerHeight + 5
     );
-    this.drawBluetoothDisconnectedIndicator(
-      Math.round((width + clockWidth) / 2) + 4,
-      height - 24
-    );
+    if (!this.isConnected) {
+      this.drawBluetoothDisconnectedIndicator(
+        Math.round((width + clockWidth) / 2) + 4,
+        height - 24
+      );
+    }
     this.footerState = {
       clock,
-      date: `${days[now.getDay()]} ${now.getDate()}`,
+      date: `${DAYS[now.getDay()]} ${now.getDate()}`,
       battery,
-      batteryWidth: this.render.getTextWidth(battery, this.fonts.label),
+      batteryWidth,
+      clockWidth,
       connected: this.isConnected,
     };
   }
@@ -947,8 +960,7 @@ class CrimsonBearWatchface {
     const clock = `${String(date.getHours()).padStart(2, "0")}:${String(
       date.getMinutes()
     ).padStart(2, "0")}`;
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const dateText = `${days[date.getDay()]} ${date.getDate()}`;
+    const dateText = `${DAYS[date.getDay()]} ${date.getDate()}`;
     const battery = `${this.state.battery}%`;
     const checkMinute = Boolean(minuteDate);
     const clockChanged = checkMinute && clock !== this.footerState.clock;
@@ -971,10 +983,17 @@ class CrimsonBearWatchface {
         redraw(0, 58, () =>
           this.text(dateText, this.fonts.label, this.colors.white, 5, footerY + 5)
         );
-      if (clockChanged)
-        redraw(Math.round(width / 2) - 43, 86, () =>
+      if (clockChanged) {
+        const clockWidth = this.render.getTextWidth(clock, this.fonts.footer);
+        // Clear the wider of the old and new clock so a narrower new value can
+        // never leave the previous glyph's outer edges behind.
+        const clearWidth = Math.max(clockWidth, this.footerState.clockWidth || 0) + 2;
+        const clearX = Math.round(width / 2 - clearWidth / 2);
+        redraw(clearX, clearWidth, () =>
           this.text(clock, this.fonts.footer, this.colors.white, width / 2, footerY, true)
         );
+        this.footerState.clockWidth = clockWidth;
+      }
       if (batteryChanged) {
         const batteryWidth = this.render.getTextWidth(battery, this.fonts.label);
         const clearWidth = Math.max(batteryWidth, this.footerState.batteryWidth) + 2;
