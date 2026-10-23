@@ -7,7 +7,7 @@ repo_root="$(pwd)"
 do_build=false
 do_install=false
 do_publish=false
-do_minify=false
+do_minify=true
 skip_deps=false
 release_notes=""
 interactive=false
@@ -15,14 +15,16 @@ variant="crimsonbear"
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--publish] [--minify] [--skip-deps] [--release-notes TEXT]
+Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
 
 With no arguments, the script interactively selects actions. Explicit action flags
 run without prompts. --install targets the connected phone; --publish pushes main
 to GitHub and publishes the release to the RePebble store without requiring
 --build or --install. Both variants publish under their own store listing. The Pebble
-publisher still performs its mandatory package build. --minify safely compresses
-and mangles internal watch JavaScript identifiers without mangling protocol properties.
+publisher still performs its mandatory package build. Minification is ON by default: it
+safely compresses and mangles internal watch JavaScript identifiers without mangling
+protocol properties, which keeps the Alloy resource pack small enough to launch on the
+watch. --no-minify disables it (--minify is kept for explicitness but is now the default).
 --skip-deps avoids reinstalling dependencies for local builds only after validating
 that node_modules exactly matches package-lock.json; it is not allowed with --publish.
 EOF
@@ -45,6 +47,7 @@ else
       --install) do_install=true ;;
       --publish) do_publish=true ;;
       --minify) do_minify=true ;;
+      --no-minify) do_minify=false ;;
       --skip-deps) skip_deps=true ;;
       --release-notes)
         if [[ $# -lt 2 ]]; then
@@ -99,7 +102,7 @@ if [[ "$interactive" == true ]]; then
     release_notes="${release_notes:-$default_notes}"
   fi
   if [[ "$do_build" == true || "$do_publish" == true ]]; then
-    if confirm "Minify generated watch JavaScript? [y/N] " n; then do_minify=true; fi
+    if confirm "Minify generated watch JavaScript? [Y/n] " y; then do_minify=true; else do_minify=false; fi
   fi
 fi
 
