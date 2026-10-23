@@ -43,7 +43,9 @@ diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 
 Loop delivers these messages over its own PPoGATT session (the watch stays
 connected to the Pebble app at the same time) through the LupedKitWatchFace
-plugin and elbbepTransport's LupedKit.
+plugin. The phone side of this protocol is the `LupedKit` library in
+[elbbepTransport](https://github.com/dabear/elbbepTransport), which Loop links
+and other apps such as Trio can share.
 
 There is no watch-side periodic glucose fetch timer in this variant. Glucose is
 pushed by the host; the startup refresh request exists only to restore state
