@@ -86,12 +86,14 @@ class CrimsonBearWatchface {
       updated: 0,
       configured: false,
       fullScreen: false,
+      hostAlertLevel: 0,
       error: null,
       battery: 100,
     };
     this.configurationKnown = false;
     this.alarmZone = "normal";
     this.lastAlarmAt = 0;
+    this.lastHostAlertLevel = 0;
     this.stale = false;
     this.lastDataSignature = null;
     this.footerState = {
@@ -1235,6 +1237,24 @@ class CrimsonBearWatchface {
     vibe();
   }
 
+  // @if luped
+  // Host-issued alerts: Loop/Trio evaluate their own alerts and send a level in
+  // DATA index 15. The watch buzzes when the level first rises (critical buzzes
+  // hard, otherwise a short pulse) and re-arms once the host clears it to 0.
+  // This variant does not evaluate glucose thresholds itself.
+  checkHostAlert() {
+    const level = Number(this.state.hostAlertLevel) || 0;
+    if (level > this.lastHostAlertLevel) {
+      // Buzz with the same pattern as glucose alarms, for any level. A host
+      // without the iOS critical alert entitlement delivers urgent alerts (such
+      // as urgent low) at warning level, so the watch must not treat only the
+      // critical level as worth a full buzz.
+      vibe();
+    }
+    this.lastHostAlertLevel = level;
+  }
+  // @endif
+
   // Phone-to-watch messaging
 
   readMessages() {
@@ -1263,6 +1283,10 @@ class CrimsonBearWatchface {
           // Loop sends a per-zone alarm bitmask and a separate urgent-low repeat.
           data.alarmEnabled = values[9];
           data.urgentLowSnooze = values[14] || data.lowSnooze;
+          // Host-issued alert level (index 15): 0 none, 1 info, 2 warning, 3 critical.
+          // Loop/Trio evaluate their own alerts and set this; the watch does not
+          // evaluate thresholds in this variant.
+          data.hostAlertLevel = values[15] || 0;
           // @else
           const data = expandData(JSON.parse(value));
           // @endif
@@ -1323,7 +1347,12 @@ class CrimsonBearWatchface {
     // Process the response first so reconnect flushing cannot resend a request
     // that this message has already satisfied.
     this.setPhoneConnected(true);
-    if (receivedData) this.checkGlucoseAlarm();
+    if (receivedData) {
+      this.checkGlucoseAlarm();
+      // @if luped
+      this.checkHostAlert();
+      // @endif
+    }
     if (needsFullDraw) this.draw();
   }
 }
