@@ -1282,12 +1282,17 @@ class CrimsonBearWatchface {
             "DoubleDown", "SingleDown", "FortyFiveDown", "Flat",
             "FortyFiveUp", "SingleUp", "DoubleUp",
           ];
+          const mmol = values[5];
           const data = {
             glucose: values[1],
             delta: values[2],
             direction: LUPED_DIRECTIONS[values[3]] || "Flat",
             readings: values[4] || [],
-            units: values[5] ? "mmol/L" : "mg/dL",
+            units: mmol ? "mmol/L" : "mg/dL",
+            // Colour thresholds are watchface-side; choose them in the display
+            // unit so the ring and graph scale correctly (70/180 mg/dL).
+            low: mmol ? 3.9 : 70,
+            high: mmol ? 10 : 180,
             updated: values[6],
             fullScreen: Boolean(values[7]),
             hostAlertLevel: values[8] || 0,
