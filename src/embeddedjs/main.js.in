@@ -2,7 +2,10 @@ import Poco from "commodetto/Poco";
 import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
+// @if luped
+// @else
 import { expandData } from "protocol";
+// @endif
 
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
@@ -1181,6 +1184,10 @@ class CrimsonBearWatchface {
     return true;
   }
 
+  // @if luped
+  // @else
+  // CrimsonBear evaluates glucose thresholds on the watch. Luped does not — its
+  // alerts are host-issued (see checkHostAlert) — so this method is omitted there.
   checkGlucoseAlarm() {
     const glucose = Number(this.state.glucose);
     const updated = Number(this.state.updated);
@@ -1199,27 +1206,14 @@ class CrimsonBearWatchface {
       this.lastAlarmAt = 0;
       return;
     }
-    // @if luped
-    if (!(this.state.alarmEnabled & (zone === "urgentLow" ? 1 : zone === "low" ? 2 : 4))) {
-    // @else
     if (!this.state.alarmEnabled) {
-    // @endif
       this.alarmZone = zone;
       this.lastAlarmAt = 0;
       return;
     }
 
-    // @if luped
-    const snoozeMinutes =
-      zone === "high"
-        ? this.state.highSnooze
-        : zone === "urgentLow"
-          ? this.state.urgentLowSnooze
-          : this.state.lowSnooze;
-    // @else
     const snoozeMinutes =
       zone === "high" ? this.state.highSnooze : this.state.lowSnooze;
-    // @endif
     const snoozeElapsed =
       Date.now() - this.lastAlarmAt >= Number(snoozeMinutes) * 60000;
     const changedZone = zone !== this.alarmZone;
@@ -1236,6 +1230,7 @@ class CrimsonBearWatchface {
     );
     vibe();
   }
+  // @endif
 
   // @if luped
   // Host-issued alerts: Loop/Trio evaluate their own alerts and send a level in
@@ -1278,15 +1273,25 @@ class CrimsonBearWatchface {
         }
         try {
           // @if luped
+          // Minimal Luped protocol: [version, glucose, delta, trend, history,
+          // unitsFlag, timestamp, fullScreen, hostAlertLevel]. Alerts are
+          // host-issued (index 8); thresholds do not travel, so the watch colours
+          // its ring from its own built-in low/high.
           const values = JSON.parse(value);
-          const data = expandData(values);
-          // Loop sends a per-zone alarm bitmask and a separate urgent-low repeat.
-          data.alarmEnabled = values[9];
-          data.urgentLowSnooze = values[14] || data.lowSnooze;
-          // Host-issued alert level (index 15): 0 none, 1 info, 2 warning, 3 critical.
-          // Loop/Trio evaluate their own alerts and set this; the watch does not
-          // evaluate thresholds in this variant.
-          data.hostAlertLevel = values[15] || 0;
+          const LUPED_DIRECTIONS = [
+            "DoubleDown", "SingleDown", "FortyFiveDown", "Flat",
+            "FortyFiveUp", "SingleUp", "DoubleUp",
+          ];
+          const data = {
+            glucose: values[1],
+            delta: values[2],
+            direction: LUPED_DIRECTIONS[values[3]] || "Flat",
+            readings: values[4] || [],
+            units: values[5] ? "mmol/L" : "mg/dL",
+            updated: values[6],
+            fullScreen: Boolean(values[7]),
+            hostAlertLevel: values[8] || 0,
+          };
           // @else
           const data = expandData(JSON.parse(value));
           // @endif
@@ -1348,9 +1353,10 @@ class CrimsonBearWatchface {
     // that this message has already satisfied.
     this.setPhoneConnected(true);
     if (receivedData) {
-      this.checkGlucoseAlarm();
       // @if luped
       this.checkHostAlert();
+      // @else
+      this.checkGlucoseAlarm();
       // @endif
     }
     if (needsFullDraw) this.draw();
