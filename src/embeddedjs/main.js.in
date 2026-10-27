@@ -96,7 +96,6 @@ class CrimsonBearWatchface {
     this.configurationKnown = false;
     this.alarmZone = "normal";
     this.lastAlarmAt = 0;
-    this.lastHostAlertLevel = 0;
     this.stale = false;
     this.lastDataSignature = null;
     this.footerState = {
@@ -1233,20 +1232,25 @@ class CrimsonBearWatchface {
   // @endif
 
   // @if luped
-  // Host-issued alerts: Loop/Trio evaluate their own alerts and send a level in
-  // DATA index 15. The watch buzzes when the level first rises (critical buzzes
-  // hard, otherwise a short pulse) and re-arms once the host clears it to 0.
-  // This variant does not evaluate glucose thresholds itself.
+  // Host-issued alerts: Loop/Trio evaluate their own alerts. DATA index 8 is the
+  // highest active level; index 9 is an alert event the host advances on every
+  // fire, including repeats of an alert that is still active. The watch buzzes
+  // when the event changes while the level is above 0, so it repeats in step
+  // with the host and stops when the user acknowledges on the phone. The event
+  // is recorded on every message, even while silent (watch alarms off sends
+  // level 0), and the first one after a start is recorded without buzzing.
+  // Any level gets the full glucose-alarm buzz: without the iOS critical-alert
+  // entitlement, urgent alerts arrive at warning level.
   checkHostAlert() {
-    const level = Number(this.state.hostAlertLevel) || 0;
-    if (level > this.lastHostAlertLevel) {
-      // Buzz with the same pattern as glucose alarms, for any level. A host
-      // without the iOS critical alert entitlement delivers urgent alerts (such
-      // as urgent low) at warning level, so the watch must not treat only the
-      // critical level as worth a full buzz.
+    const event = this.state.alertEvent;
+    if (
+      this.lastAlertEvent !== undefined &&
+      event !== this.lastAlertEvent &&
+      this.state.hostAlertLevel > 0
+    ) {
       vibe();
     }
-    this.lastHostAlertLevel = level;
+    this.lastAlertEvent = event;
   }
   // @endif
 
@@ -1274,9 +1278,9 @@ class CrimsonBearWatchface {
         try {
           // @if luped
           // Minimal Luped protocol: [version, glucose, delta, trend, history,
-          // unitsFlag, timestamp, fullScreen, hostAlertLevel]. Alerts are
-          // host-issued (index 8); thresholds do not travel, so the watch colours
-          // its ring from its own built-in low/high.
+          // unitsFlag, timestamp, fullScreen, hostAlertLevel, alertEvent]. Alerts
+          // are host-issued (indexes 8-9); thresholds do not travel, so the watch
+          // colours its ring from its own built-in low/high.
           const values = JSON.parse(value);
           const LUPED_DIRECTIONS = [
             "DoubleDown", "SingleDown", "FortyFiveDown", "Flat",
@@ -1296,6 +1300,7 @@ class CrimsonBearWatchface {
             updated: values[6],
             fullScreen: Boolean(values[7]),
             hostAlertLevel: values[8] || 0,
+            alertEvent: values[9],
           };
           // @else
           const data = expandData(JSON.parse(value));

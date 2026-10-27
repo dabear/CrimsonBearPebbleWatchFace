@@ -8,7 +8,7 @@ The mobile app should send `CONFIGURED: 1` and a `DATA` JSON array whenever
 settings change, when a new glucose sample arrives, when its alerts change, and
 in response to the watch's one-time startup `COMMAND: "refresh"` request.
 
-`DATA` is a minimal 9-element array (protocol version 1):
+`DATA` is a minimal 10-element array (protocol version 1):
 
 | Index | Value                                                                                          |
 | ----: | ---------------------------------------------------------------------------------------------- |
@@ -21,6 +21,7 @@ in response to the watch's one-time startup `COMMAND: "refresh"` request.
 |     6 | Reading timestamp in Unix milliseconds                                                         |
 |     7 | Full-screen ring: `0` ring with graph, `1` full-screen ring                                    |
 |     8 | Host-issued alert level: `0` none, `1` info, `2` warning, `3` critical                         |
+|     9 | Alert event: changes each time the host fires an alert, including repeats                      |
 
 **History (index 4).** Only the graph uses it, and the full-screen ring has no
 graph, so hosts send `[]` there (Loop does since elbbepTransport 0.3.8). The
@@ -28,11 +29,19 @@ current value, delta and trend travel in their own fields. When the user turns
 full-screen off, the host sends a new `DATA` with the history at once. An empty
 history in graph mode shows "Waiting for CGM" in the graph area.
 
-**Alerts (index 8).** The host evaluates its own glucose alerts and applies its
-own mute; the watch does not evaluate thresholds. The watch buzzes with the
-glucose-alarm pattern whenever the level rises (any level: a host without the
-iOS critical-alert entitlement sends urgent alerts at warning level) and re-arms
-when the host clears it to `0`. Thresholds and repeat intervals do not travel;
+**Alerts (indexes 8-9).** The host evaluates its own glucose alerts and applies
+its own mute; the watch does not evaluate thresholds. Index 8 is the highest
+active alert level, `0` while the user has turned watch alarms off. Index 9 is
+an alert event the host advances every time it fires an alert, including each
+repeat of an alert that is still active, whether or not watch alarms are on.
+The host persists it so a restart can't reuse the value the watch last saw; it
+wraps at 1000. The watch buzzes with the glucose-alarm pattern when the event
+differs from the last one it saw and the level is above `0` (any level: a host
+without the iOS critical-alert entitlement sends urgent alerts at warning
+level). It records the event on every `DATA`, even when it doesn't buzz, and
+records the first event after the watchface starts without buzzing. So the
+watch buzzes when the host fires, repeats with the host, and stops when the
+user acknowledges on the phone. Thresholds and repeat intervals do not travel;
 the ring and graph are coloured from built-in, unit-aware limits (70/180 mg/dL,
 3.9/10 mmol/L). Independently, the watch gives one short buzz when its latest
 reading becomes 15 minutes old.
