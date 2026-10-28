@@ -545,9 +545,10 @@ class CrimsonBearWatchface {
 
   // @if luped
   // An open loop opens the ring at the top like Loop's own status ring: a 90°
-  // gap (LoopCircleView trims a quarter). The disc is cleared 2 px wider than the
-  // ring so no anti-aliased edge of a closed ring drawn earlier stays in the gap,
-  // and the dark border stops short of the cuts so their ends are clean.
+  // gap (LoopCircleView trims a quarter). Only the gap's wedge is cleared, 2 px
+  // wider than the ring so no anti-aliased edge of a closed ring drawn earlier
+  // stays in it (clearing the whole disc would paint over the status strip
+  // below), and the dark border stops short of the cuts so their ends are clean.
   drawVariantRing(cx, cy, radius, open = false) {
     const outerRadius = radius - 3;
     const ringWidth = Math.min(10, Math.max(9, Math.round(outerRadius * 0.12)));
@@ -555,7 +556,10 @@ class CrimsonBearWatchface {
     const ringColor = this.stale ? this.colors.graph : this.glucoseColor(glucose);
     const from = open ? 45 : 0;
     const edge = open ? 3 : 0;
-    if (open) this.render.drawCircle(this.colors.pale, cx, cy, outerRadius + 2, 0, 360);
+    if (open) {
+      this.render.drawCircle(this.colors.pale, cx, cy, outerRadius + 2, 0, from + 2);
+      this.render.drawCircle(this.colors.pale, cx, cy, outerRadius + 2, 358 - from, 360);
+    }
     this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, from + edge, 360 - from - edge);
     this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, from, 360 - from);
     this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);
