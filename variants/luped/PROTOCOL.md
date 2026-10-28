@@ -23,7 +23,7 @@ first 10, and the watch reads every field by index:
 |     7 | Full-screen ring: `0` ring with graph, `1` full-screen ring                                    |
 |     8 | Host-issued alert level: `0` none, `1` info, `2` warning, `3` critical                         |
 |     9 | Alert event: changes each time the host fires an alert, including repeats                      |
-|    10 | Insulin on board (U, 2 decimals), or `null`                                                    |
+|    10 | Insulin on board (U, 1 decimal), or `null`                                                     |
 |    11 | Carbs on board (g, whole), or `null`                                                           |
 |    12 | Last loop completed (ms since Unix epoch), or `null`                                           |
 |    13 | Closed loop: `1`, open loop: `0`, or `null`                                                    |
