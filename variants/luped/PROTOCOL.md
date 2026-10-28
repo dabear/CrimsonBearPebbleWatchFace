@@ -49,6 +49,16 @@ reading becomes 15 minutes old.
 The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
+The watch may send `COMMAND: "mute:<minutes>"` to ask the host to mute its
+alerts; the host acts on it only if its plugin declares remote mute and its
+user allowed muting from the watch. The test build sends `mute:30` on a shake
+(`SHAKE_TO_MUTE`, off by default because listening keeps the accelerometer
+running).
+
+Alloy turns a watchface's writes off whenever a non-system session (the
+host's PPoGATT session) opens or closes, and only a new `Message` turns them
+back on. Luped reopens its `Message` (at most every 30 seconds) when a write
+fails, so requests and diagnostics are not stuck until the watchface restarts.
 Luped appends two fields to the shared diagnostics array: index 38 counts
 system pop-ups (notifications, alarms, calls) that covered the watchface, and
 index 39 lists the last 5 host-alert buzzes as `[alert event, alert level,

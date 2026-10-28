@@ -3,10 +3,14 @@ import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
 // @if luped
+import Accelerometer from "embedded:sensor/Accelerometer";
 // @else
 import { expandData } from "protocol";
 // @endif
 
+// @if luped
+const SHAKE_TO_MUTE = false;
+// @endif
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
 // @if timedRefresh
@@ -80,12 +84,17 @@ class CrimsonBearWatchface {
       direction: "NONE",
       readings: [],
       units: "mg/dL",
+      // @if luped
+      low: 70,
+      high: 180,
+      // @else
       urgentLow: 55,
       low: 70,
       high: 180,
       alarmEnabled: true,
       lowSnooze: 15,
       highSnooze: 30,
+      // @endif
       updated: 0,
       configured: false,
       fullScreen: false,
@@ -94,8 +103,11 @@ class CrimsonBearWatchface {
       battery: 100,
     };
     this.configurationKnown = false;
+    // @if luped
+    // @else
     this.alarmZone = "normal";
     this.lastAlarmAt = 0;
+    // @endif
     this.stale = false;
     this.lastDataSignature = null;
     this.footerState = {
@@ -145,6 +157,16 @@ class CrimsonBearWatchface {
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
     // @if luped
+    // Test: a shake asks the phone to mute its alerts for 30 minutes; the phone
+    // acts on it only if its user allowed muting from the watch. Off by default:
+    // listening keeps the accelerometer running.
+    if (SHAKE_TO_MUTE)
+      this.shake = new Accelerometer({
+        onTap: () => {
+          this.mutePending = true;
+          this.flushOutbound();
+        },
+      });
     // A system pop-up (notification, alarm, call) covering the watchface. A
     // buzz it covers within its 4.7 s gets the delay as its outcome.
     watch.addEventListener("willFocus", (focused) => {
@@ -221,9 +243,12 @@ class CrimsonBearWatchface {
       dataMessages: 0,
       refreshRequests: 0,
       refreshDeferred: 0,
+      // @if luped
+      // @else
       urgentLowAlarms: 0,
       lowAlarms: 0,
       highAlarms: 0,
+      // @endif
       staleTransitions: 0,
       staleAlarms: 0,
       staleAgeMaxMs: 0,
@@ -298,9 +323,16 @@ class CrimsonBearWatchface {
       d.dataMessages,
       d.refreshRequests,
       d.refreshDeferred,
+      // @if luped
+      // On-watch threshold alarms are CrimsonBear only.
+      0,
+      0,
+      0,
+      // @else
       d.urgentLowAlarms,
       d.lowAlarms,
       d.highAlarms,
+      // @endif
       d.incomingMessages,
       d.incomingBytes,
       d.outgoingMessages,
@@ -1138,9 +1170,18 @@ class CrimsonBearWatchface {
   }
 
   flushOutbound() {
+    // @if luped
+    if ((!this.refreshPending && !this.telemetryPending && !this.mutePending) || !this.message)
+      return;
+    const values = [];
+    // A mute request takes the COMMAND key; a pending refresh follows it.
+    const mute = this.mutePending;
+    if (mute || this.refreshPending) values.push(["COMMAND", mute ? "mute:30" : "refresh"]);
+    // @else
     if ((!this.refreshPending && !this.telemetryPending) || !this.message) return;
     const values = [];
     if (this.refreshPending) values.push(["COMMAND", "refresh"]);
+    // @endif
     if (this.telemetryPending)
       values.push(["DIAGNOSTICS", JSON.stringify(this.diagnosticsSnapshot())]);
     try {
@@ -1153,6 +1194,10 @@ class CrimsonBearWatchface {
           0
         )
       );
+      // @if luped
+      if (mute) this.mutePending = false;
+      else
+      // @endif
       if (this.refreshPending) {
         // @if timedRefresh
         this.probing = !this.lastRefreshRequestedAt && Number(this.state.updated) > 0;
@@ -1167,6 +1212,17 @@ class CrimsonBearWatchface {
         this.lastTelemetrySentAt = Date.now();
       }
     } catch (_) {
+      // @if luped
+      // Alloy turns writes off whenever the phone's app session (Loop's, not the
+      // Pebble app's) opens or closes, and only a new Message turns them back on.
+      // Reopen it, at most every 30 s; the new one sends what is pending.
+      if (Date.now() - (this.reopenedAt || 0) > 30000) {
+        this.reopenedAt = Date.now();
+        this.message.close();
+        this.startMessageService();
+        return;
+      }
+      // @endif
       // Keep the request pending. onWritable will retry it when the outbox is
       // actually available, without starting a continuous refresh loop.
       this.countDiagnostic("refreshDeferred");
