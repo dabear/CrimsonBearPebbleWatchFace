@@ -668,9 +668,9 @@ class CrimsonBearWatchface {
         height
       );
     // @if luped
-    // The space left of the ring holds a request's outcome; it is repainted on
-    // every render so an older one never shows through.
-    this.render.fillRectangle(this.colors.ink, x, y, 36, height);
+    // The strip left of the CGM time holds a request's outcome; it is repainted
+    // on every render so an older one never shows through.
+    this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 4 - x, height);
     if (this.result) this.text(this.result, this.fonts.status, this.colors.white, x + 5, y + 1);
     // @endif
 
@@ -1423,13 +1423,11 @@ class CrimsonBearWatchface {
         this.state.error = value;
       // @if luped
       } else if (key === "RESULT") {
-        // The phone's "<action>:<outcome>" for a watch request, shown left of
-        // the ring until the next reading as the action's initial and ok/no
-        // (B bolus, F forced bolus, C carbs, M mute): a short buzz when it was
-        // carried out, a double buzz when it wasn't.
-        const ok = value.endsWith(":ok");
-        this.result = value[0].toUpperCase() + (ok ? " ok" : " no");
-        if (ok) Vibes.shortPulse();
+        // The phone's "<action>:<outcome>" for a watch request, shown in the
+        // status strip until the next reading: a short buzz when it was carried
+        // out, a double buzz when it wasn't.
+        this.result = value;
+        if (value.endsWith(":ok")) Vibes.shortPulse();
         else Vibes.doublePulse();
         needsFullDraw = true;
       // @endif
