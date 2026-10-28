@@ -49,6 +49,14 @@ reading becomes 15 minutes old.
 The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
+Luped appends two fields to the shared diagnostics array: index 38 counts
+system pop-ups (notifications, alarms, calls) that covered the watchface, and
+index 39 lists the last 5 host-alert buzzes as `[alert event, alert level,
+start (ms since Unix epoch), outcome]`. PebbleOS silently drops an app's
+vibration while another one plays and cancels it when a system pop-up closes,
+so the outcome records whether a pop-up covered the watchface during the
+4.7-second buzz: `-1` not covered, `0` already covered when the buzz started,
+otherwise the milliseconds into the buzz.
 
 Loop delivers these messages over its own PPoGATT session (the watch stays
 connected to the Pebble app at the same time) through the LupedKitWatchFace

@@ -144,6 +144,18 @@ class CrimsonBearWatchface {
     watch.addEventListener("connected", () => this.checkConnection());
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
+    // @if luped
+    // A system pop-up (notification, alarm, call) covering the watchface. A
+    // buzz it covers within its 4.7 s gets the delay as its outcome.
+    watch.addEventListener("willFocus", (focused) => {
+      this.coveredAt = focused ? 0 : Date.now();
+      if (focused) return;
+      this.countDiagnostic("popups");
+      const buzz = this.diagnostics.buzzes[this.diagnostics.buzzes.length - 1];
+      if (buzz && buzz[3] < 0 && this.coveredAt - buzz[2] < 4700)
+        buzz[3] = this.coveredAt - buzz[2] || 1;
+    });
+    // @endif
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
       this.lastRenderedFullScreen = null;
@@ -230,6 +242,10 @@ class CrimsonBearWatchface {
       lateMinuteEvents: 0,
       minuteEventLateMs: 0,
       minuteEventLateMaxMs: 0,
+      // @if luped
+      popups: 0,
+      buzzes: [],
+      // @endif
     };
   }
 
@@ -304,6 +320,10 @@ class CrimsonBearWatchface {
       d.phoneDisconnectedMs + activeDisconnectMs,
       Math.max(d.phoneDisconnectedMaxMs, activeDisconnectMs),
       this.isConnected ? 0 : 1,
+      // @if luped
+      d.popups,
+      d.buzzes,
+      // @endif
     ];
   }
 
@@ -1241,6 +1261,12 @@ class CrimsonBearWatchface {
   // level 0), and the first one after a start is recorded without buzzing.
   // Any level gets the full glucose-alarm buzz: without the iOS critical-alert
   // entitlement, urgent alerts arrive at warning level.
+  //
+  // PebbleOS drops an app's buzz while another vibration plays and cancels it
+  // when a system pop-up closes, without telling the app. The last 5 buzzes
+  // are kept in the diagnostics as [event, level, start time, outcome] so a
+  // missed one can be matched to a pop-up: outcome -1 not covered, 0 already
+  // covered, otherwise the ms into the buzz a pop-up covered the face.
   checkHostAlert() {
     const event = this.state.alertEvent;
     if (
@@ -1249,6 +1275,10 @@ class CrimsonBearWatchface {
       this.state.hostAlertLevel > 0
     ) {
       vibe();
+      this.ensureDiagnosticsWindow();
+      const buzzes = this.diagnostics.buzzes;
+      buzzes.push([event, this.state.hostAlertLevel, Date.now(), this.coveredAt ? 0 : -1]);
+      if (buzzes.length > 5) buzzes.shift();
     }
     this.lastAlertEvent = event;
   }
