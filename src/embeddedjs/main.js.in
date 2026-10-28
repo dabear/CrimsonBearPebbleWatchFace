@@ -73,6 +73,15 @@ class CrimsonBearWatchface {
       bluetooth: this.render.makeColor(0, 128, 255),
       low: this.render.makeColor(@COLOR_LOW@),
       high: this.render.makeColor(@COLOR_HIGH@),
+      // @if luped
+      // Loop's status ring: fresh, aging, stale (LoopCompletionFreshness).
+      loop: [
+        this.render.makeColor(0, 170, 0),
+        this.render.makeColor(255, 170, 0),
+        this.render.makeColor(255, 0, 0),
+      ],
+      dim: this.render.makeColor(170, 170, 170),
+      // @endif
     };
     this.state = {
       glucose: null,
@@ -670,10 +679,19 @@ class CrimsonBearWatchface {
         height
       );
     // @if luped
-    // The strip left of the CGM time holds a request's outcome; it is repainted
-    // on every render so an older one never shows through.
+    // The strip left of the CGM time holds IOB and COB, or for a minute a
+    // request's outcome; it is repainted on every render so older text never
+    // shows through. IOB and COB dim once the loop is stale.
     this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 4 - x, height);
-    if (this.result) this.text(this.result, this.fonts.status, this.colors.white, x + 5, y + 1);
+    const { iob, cob } = this.state;
+    const left =
+      this.result ||
+      (iob == null ? "" : `${Number(iob).toFixed(2)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`);
+    const stale = !this.result && this.loopFreshness() > 1;
+    this.text(left, this.fonts.status, stale ? this.colors.dim : this.colors.white, x + 5, y + 1);
+    // Round screens have no free corner, so the loop ring sits on the strip.
+    if (screen.round)
+      this.drawLoopRing(x + 13 + this.render.getTextWidth(left, this.fonts.status), y + 2, this.colors.ink, this.colors.white);
     // @endif
 
     this.text(
@@ -859,6 +877,14 @@ class CrimsonBearWatchface {
       arrowClearRadius * 2
     );
     if (!this.stale) this.arrow(arrowCx, cy, this.state.direction, this.colors.crimson);
+    // @if luped
+    if (!screen.round) {
+      this.render.fillRectangle(this.colors.pale, width - 45, 4, 45, 24);
+      this.drawLoopRing(width - 42, 10, this.colors.pale, this.colors.ink);
+    }
+    this.statusY = statusY;
+    this.loopFresh = this.loopFreshness();
+    // @endif
 
     this.graph(0, graphY, width, height - graphY - footerHeight);
     if (drawFooter) this.footer(width, height, footerHeight, now);
@@ -1069,6 +1095,29 @@ class CrimsonBearWatchface {
           this.drawBluetoothDisconnectedIndicator(indicatorX, this.render.height - 24)
         );
       }
+      // @if luped
+      // The loop age changes every minute; a change in freshness also dims or
+      // brightens IOB/COB, so that one redraws the whole face.
+      if (checkMinute && !this.state.fullScreen && this.statusY) {
+        if (this.loopFreshness() !== this.loopFresh) this.requestRender(3);
+        else if (screen.round) {
+          this.render.begin(0, this.statusY, width, 17);
+          began = true;
+          this.drawCgmStatus(0, this.statusY, width, 17);
+          began = false;
+          this.render.end();
+          invalidatedPixels += width * 17;
+        } else {
+          this.render.begin(width - 45, 4, 45, 24);
+          began = true;
+          this.render.fillRectangle(this.colors.pale, width - 45, 4, 45, 24);
+          this.drawLoopRing(width - 42, 10, this.colors.pale, this.colors.ink);
+          began = false;
+          this.render.end();
+          invalidatedPixels += 45 * 24;
+        }
+      }
+      // @endif
       if (checkMinute) {
         this.footerState.clock = clock;
         this.footerState.date = dateText;
@@ -1320,6 +1369,34 @@ class CrimsonBearWatchface {
   // missed one can be matched to a pop-up: outcome -2 vibe() failed, -1 not
   // covered, 0 already covered, otherwise the ms into the buzz a pop-up covered
   // the face. Events that arrive at level 0 (Watch Alarms off) are counted.
+  // Loop's freshness thresholds (LoopCompletionFreshness): fresh up to 6
+  // minutes, aging up to 16, stale after that or when unknown.
+  loopFreshness() {
+    const age = Date.now() - Number(this.state.lastLoop);
+    return !this.state.lastLoop ? 2 : age <= 360000 ? 0 : age <= 960000 ? 1 : 2;
+  }
+
+  // Loop's status ring with the minutes since the last loop: a full ring when
+  // the loop is closed, open at the top when it is open, coloured by freshness.
+  // Nothing when the host sends no loop status.
+  drawLoopRing(x, y, background, textColor) {
+    const { lastLoop, closedLoop } = this.state;
+    if (lastLoop == null && closedLoop == null) return;
+    const r = 6;
+    const minutes = Math.max(0, Math.floor((Date.now() - lastLoop) / 60000));
+    const color = this.colors.loop[this.loopFreshness()];
+    if (closedLoop === 0) this.render.drawCircle(color, x + r, y + r, r, 35, 325);
+    else this.render.drawCircle(color, x + r, y + r, r, 0, 360);
+    this.render.drawCircle(background, x + r, y + r, r - 2, 0, 360);
+    this.text(
+      !lastLoop ? "--" : minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`,
+      this.fonts.status,
+      textColor,
+      x + 2 * r + 3,
+      y - 3
+    );
+  }
+
   checkHostAlert() {
     const event = this.state.alertEvent;
     if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent) {
@@ -1389,6 +1466,11 @@ class CrimsonBearWatchface {
             fullScreen: Boolean(values[7]),
             hostAlertLevel: values[8] || 0,
             alertEvent: values[9],
+            // Loop status (null when the host sends none; absent from older hosts).
+            iob: values[10],
+            cob: values[11],
+            lastLoop: values[12],
+            closedLoop: values[13],
           };
           // @else
           const data = expandData(JSON.parse(value));

@@ -8,7 +8,8 @@ The mobile app should send `CONFIGURED: 1` and a `DATA` JSON array whenever
 settings change, when a new glucose sample arrives, when its alerts change, and
 in response to the watch's one-time startup `COMMAND: "refresh"` request.
 
-`DATA` is a minimal 10-element array (protocol version 1):
+`DATA` is a 14-element array (protocol version 1); hosts may send only the
+first 10, and the watch reads every field by index:
 
 | Index | Value                                                                                          |
 | ----: | ---------------------------------------------------------------------------------------------- |
@@ -22,6 +23,18 @@ in response to the watch's one-time startup `COMMAND: "refresh"` request.
 |     7 | Full-screen ring: `0` ring with graph, `1` full-screen ring                                    |
 |     8 | Host-issued alert level: `0` none, `1` info, `2` warning, `3` critical                         |
 |     9 | Alert event: changes each time the host fires an alert, including repeats                      |
+|    10 | Insulin on board (U, 2 decimals), or `null`                                                    |
+|    11 | Carbs on board (g, whole), or `null`                                                           |
+|    12 | Last loop completed (ms since Unix epoch), or `null`                                           |
+|    13 | Closed loop: `1`, open loop: `0`, or `null`                                                    |
+
+**Loop status (indexes 10–13).** In the graph layout Luped shows IOB and COB at
+the left of the status strip (dimmed once the loop is stale) and Loop's status
+ring with the minutes since the last loop in the top-right corner (on the
+status strip on round screens): a full ring for a closed loop, open at the top
+for an open loop, green up to 6 minutes, yellow up to 16, red after that, as
+Loop's own ring. A host that sends no loop status gets neither. The full-screen
+ring does not show them.
 
 **History (index 4).** Only the graph uses it, and the full-screen ring has no
 graph, so hosts send `[]` there (Loop does since elbbepTransport 0.3.8). The
