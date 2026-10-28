@@ -690,13 +690,14 @@ class CrimsonBearWatchface {
         height
       );
     // @if luped
-    // The strip left of the CGM time holds IOB and COB, or for a minute a
-    // request's outcome; it is repainted on every render so older text never
-    // shows through. IOB and COB dim once the loop is stale.
+    // The strip left of the CGM time holds IOB and COB (or the line the phone
+    // chose), or for a minute a request's outcome; it is repainted on every
+    // render so older text never shows through. It dims once the loop is stale.
     this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 4 - x, height);
     const { iob, cob } = this.state;
     const left =
       this.result ||
+      this.state.statusLine ||
       (iob == null ? "" : `${Number(iob).toFixed(2)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`);
     const stale = !this.result && this.loopFreshness() > 1;
     this.text(left, this.fonts.status, stale ? this.colors.dim : this.colors.white, x + 5, y + 1);
@@ -1483,6 +1484,9 @@ class CrimsonBearWatchface {
             cob: values[11],
             lastLoop: values[12],
             closedLoop: values[13],
+            // A status line the phone formatted (temp basal, eventual glucose,
+            // ISF & target); null means IOB and COB, formatted here.
+            statusLine: values[14],
           };
           // @else
           const data = expandData(JSON.parse(value));
