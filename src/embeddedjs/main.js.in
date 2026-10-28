@@ -701,7 +701,7 @@ class CrimsonBearWatchface {
     const [left, rest = ""] = (
       this.result ||
       this.state.statusLine ||
-      (iob == null ? "" : `${Number(iob).toFixed(2)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`)
+      (iob == null ? "" : `${Number(iob).toFixed(1)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`)
     ).split("\t");
     const color = !this.result && this.loopFreshness() > 1 ? this.colors.dim : this.colors.white;
     const restX = Math.round(width * 0.48) + 34;
