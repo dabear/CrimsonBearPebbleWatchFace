@@ -213,7 +213,12 @@ NODE
 prepare_stage() {
   rm -rf "$stage"
   mkdir -p "$stage/src/c" "$stage/src/embeddedjs" "$stage/resources/images"
-  cp src/c/mdbl.c "$stage/src/c/mdbl.c"
+  # Luped sizes its own XS machine (variants/luped/src/c/mdbl.c).
+  if [[ -f "variants/$variant/src/c/mdbl.c" ]]; then
+    cp "variants/$variant/src/c/mdbl.c" "$stage/src/c/mdbl.c"
+  else
+    cp src/c/mdbl.c "$stage/src/c/mdbl.c"
+  fi
   # Luped imports nothing from protocol.js; leaving it out keeps it out of the
   # Alloy archive, where every module counts against the memory limit.
   if [[ "$variant" != "luped" ]]; then
