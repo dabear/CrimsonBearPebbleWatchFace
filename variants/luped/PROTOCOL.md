@@ -43,6 +43,14 @@ time. A host that sends no loop status
 gets neither. The full-screen
 ring does not show them.
 
+**Turning them off.** Each of indexes 10–14 may be `null`, and the watch draws
+only what it gets: with 10, 11 and 14 `null` the strip is empty, and with 12 and
+13 `null` there is no loop ring (and the strip, if it shows anything, is
+dimmed, since the loop's age is unknown). Loop's plugin (elbbepTransport
+0.3.34+) sends only what the user's Status Line choice needs: **None** sends
+10–14 as `null`; IOB & COB sends 10–13; the phone-formatted lines send 12–13
+and 14.
+
 **History (index 4).** Only the graph uses it, and the full-screen ring has no
 graph, so hosts send `[]` there (Loop does since elbbepTransport 0.3.8). The
 current value, delta and trend travel in their own fields. When the user turns
