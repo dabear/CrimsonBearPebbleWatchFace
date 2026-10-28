@@ -693,15 +693,15 @@ class CrimsonBearWatchface {
     // The strip left of the CGM time holds IOB and COB (or the line the phone
     // chose), or for a minute a request's outcome; it is repainted on every
     // render so older text never shows through. It dims once the loop is stale.
-    // The glucose ring's bottom covers the middle of the strip, so the text is
-    // "left\tright": before the ring, and between the ring and the CGM time.
+    // The glucose ring's bottom covers the middle of the strip, so a line too long
+    // for the space before it (ISF & target) comes as "left\tright": the second
+    // part goes between the ring and the CGM time.
     this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 4 - x, height);
     const { iob, cob } = this.state;
     const [left, rest = ""] = (
-      this.result
-        ? this.result.replace("forcedbolus", "forced").replace(":", "\t")
-        : this.state.statusLine ||
-          (iob == null ? "" : `${Number(iob).toFixed(2)} U`) + "\t" + (cob == null ? "" : `${Math.round(cob)} g`)
+      this.result ||
+      this.state.statusLine ||
+      (iob == null ? "" : `${Number(iob).toFixed(2)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`)
     ).split("\t");
     const color = !this.result && this.loopFreshness() > 1 ? this.colors.dim : this.colors.white;
     const restX = Math.round(width * 0.48) + 34;

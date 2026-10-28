@@ -11,23 +11,23 @@ in response to the watch's one-time startup `COMMAND: "refresh"` request.
 `DATA` is a 15-element array (protocol version 1); hosts may send only the
 first 10, and the watch reads every field by index:
 
-| Index | Value                                                                                                    |
-| ----: | -------------------------------------------------------------------------------------------------------- |
-|     0 | Protocol version (`1`)                                                                                   |
-|     1 | Glucose value in the selected display unit                                                               |
-|     2 | Delta in the selected display unit                                                                       |
-|     3 | Direction index: DoubleDown, SingleDown, FortyFiveDown, Flat, FortyFiveUp, SingleUp, DoubleUp            |
-|     4 | Up to 12 glucose values, oldest first, for the graph. `[]` in full-screen mode (index 7 = `1`)           |
-|     5 | Units: `0` mg/dL, `1` mmol/L                                                                             |
-|     6 | Reading timestamp in Unix milliseconds                                                                   |
-|     7 | Full-screen ring: `0` ring with graph, `1` full-screen ring                                              |
-|     8 | Host-issued alert level: `0` none, `1` info, `2` warning, `3` critical                                   |
-|     9 | Alert event: changes each time the host fires an alert, including repeats                                |
-|    10 | Insulin on board (U, 2 decimals), or `null`                                                              |
-|    11 | Carbs on board (g, whole), or `null`                                                                     |
-|    12 | Last loop completed (ms since Unix epoch), or `null`                                                     |
-|    13 | Closed loop: `1`, open loop: `0`, or `null`                                                              |
-|    14 | Status line the phone formatted as `left<tab>right` (before the ring / between ring and time), or `null` |
+| Index | Value                                                                                          |
+| ----: | ---------------------------------------------------------------------------------------------- |
+|     0 | Protocol version (`1`)                                                                         |
+|     1 | Glucose value in the selected display unit                                                     |
+|     2 | Delta in the selected display unit                                                             |
+|     3 | Direction index: DoubleDown, SingleDown, FortyFiveDown, Flat, FortyFiveUp, SingleUp, DoubleUp  |
+|     4 | Up to 12 glucose values, oldest first, for the graph. `[]` in full-screen mode (index 7 = `1`) |
+|     5 | Units: `0` mg/dL, `1` mmol/L                                                                   |
+|     6 | Reading timestamp in Unix milliseconds                                                         |
+|     7 | Full-screen ring: `0` ring with graph, `1` full-screen ring                                    |
+|     8 | Host-issued alert level: `0` none, `1` info, `2` warning, `3` critical                         |
+|     9 | Alert event: changes each time the host fires an alert, including repeats                      |
+|    10 | Insulin on board (U, 2 decimals), or `null`                                                    |
+|    11 | Carbs on board (g, whole), or `null`                                                           |
+|    12 | Last loop completed (ms since Unix epoch), or `null`                                           |
+|    13 | Closed loop: `1`, open loop: `0`, or `null`                                                    |
+|    14 | Status line the phone formatted (ISF & target as `ISF<tab>target` around the ring), or `null`  |
 
 **Loop status (indexes 10–13).** In the graph layout Luped shows IOB and COB at
 the left of the status strip (dimmed once the loop is stale) and Loop's status
@@ -37,10 +37,9 @@ for an open loop, green up to 6 minutes, yellow up to 16, red after that, as
 Loop's own ring. In an open loop the glucose ring itself is open at the top too.
 The phone can replace IOB and COB with a line it formats itself (index 14),
 chosen in its settings; it dims the same way. The glucose ring's bottom covers
-the middle of the strip, so every strip text is split at a tab: the first part
-before the ring (about 57 px), the second between the ring and the CGM time
-(about 36 px). IOB and COB, and request results (split at the colon), follow
-the same layout. A host that sends no loop status
+the middle of the strip; ISF & target is too long for the space before it, so
+it comes as `ISF<tab>target` and the target goes between the ring and the CGM
+time. A host that sends no loop status
 gets neither. The full-screen
 ring does not show them.
 
