@@ -46,10 +46,12 @@ ring does not show them.
 **Turning them off.** Each of indexes 10–14 may be `null`, and the watch draws
 only what it gets: with 10, 11 and 14 `null` the strip is empty, and with 12 and
 13 `null` there is no loop ring (and the strip, if it shows anything, is
-dimmed, since the loop's age is unknown). Loop's plugin (elbbepTransport
-0.3.34+) sends only what the user's Status Line choice needs: **None** sends
-10–14 as `null`; IOB & COB sends 10–13; the phone-formatted lines send 12–13
-and 14.
+dimmed, since the loop's age is unknown). Loop's plugin (elbbepTransport 0.3.35+) sends only what the user's Status Line
+and Loop Ring choices show: **None** with Loop Ring on (the default) sends 12–13
+only, so the loop ring stays; **None** with Loop Ring off sends 10–14 as `null`;
+IOB & COB sends 10–13; the phone-formatted lines send 12–13 and 14. While a line
+is shown the loop ring stays on, because the line's stale dimming needs the
+loop's age.
 
 **History (index 4).** Only the graph uses it, and the full-screen ring has no
 graph, so hosts send `[]` there (Loop does since elbbepTransport 0.3.8). The
