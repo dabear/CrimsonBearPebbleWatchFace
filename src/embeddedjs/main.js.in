@@ -3,16 +3,10 @@ import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
 // @if luped
-import Accelerometer from "embedded:sensor/Accelerometer";
 // @else
 import { expandData } from "protocol";
 // @endif
 
-// @if luped
-// Test builds only: what a shake asks the phone for ("mute:30", "bolus"); empty
-// is off, and nothing listens to the accelerometer.
-const SHAKE_COMMAND = "";
-// @endif
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
 // @if timedRefresh
@@ -159,16 +153,6 @@ class CrimsonBearWatchface {
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
     // @if luped
-    // Test: a shake sends SHAKE_COMMAND; the phone acts on it only if its
-    // user allowed it there. Off by default: listening keeps the accelerometer
-    // running.
-    if (SHAKE_COMMAND)
-      this.shake = new Accelerometer({
-        onTap: () => {
-          this.mutePending = true;
-          this.flushOutbound();
-        },
-      });
     // A system pop-up (notification, alarm, call) covering the watchface. A
     // buzz it covers within its 4.7 s gets the delay as its outcome.
     watch.addEventListener("willFocus", (focused) => {
@@ -683,6 +667,9 @@ class CrimsonBearWatchface {
         textWidth + 2,
         height
       );
+    // @if luped
+    if (this.result) this.text(this.result, this.fonts.status, this.colors.white, x + 5, y + 1);
+    // @endif
     this.text(
       value,
       this.fonts.status,
@@ -1117,7 +1104,11 @@ class CrimsonBearWatchface {
   startMessageService() {
     try {
       this.message = new Message({
+        // @if luped
+        keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS", "RESULT"],
+        // @else
         keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS"],
+        // @endif
         onReadable: () => this.readMessages(),
         onWritable: () => this.setPhoneConnected(true),
         onSuspend: () => this.setPhoneConnected(false),
@@ -1172,18 +1163,9 @@ class CrimsonBearWatchface {
   }
 
   flushOutbound() {
-    // @if luped
-    if ((!this.refreshPending && !this.telemetryPending && !this.mutePending) || !this.message)
-      return;
-    const values = [];
-    // A shake request takes the COMMAND key; a pending refresh follows it.
-    const mute = this.mutePending;
-    if (mute || this.refreshPending) values.push(["COMMAND", mute ? SHAKE_COMMAND : "refresh"]);
-    // @else
     if ((!this.refreshPending && !this.telemetryPending) || !this.message) return;
     const values = [];
     if (this.refreshPending) values.push(["COMMAND", "refresh"]);
-    // @endif
     if (this.telemetryPending)
       values.push(["DIAGNOSTICS", JSON.stringify(this.diagnosticsSnapshot())]);
     try {
@@ -1196,10 +1178,6 @@ class CrimsonBearWatchface {
           0
         )
       );
-      // @if luped
-      if (mute) this.mutePending = false;
-      else
-      // @endif
       if (this.refreshPending) {
         // @if timedRefresh
         this.probing = !this.lastRefreshRequestedAt && Number(this.state.updated) > 0;
@@ -1416,6 +1394,9 @@ class CrimsonBearWatchface {
           }
           // @endif
           if (readingAdvanced) this.lastRefreshRequestedAt = 0;
+          // @if luped
+          if (readingAdvanced) this.result = null;
+          // @endif
           this.refreshPending = false;
           needsFullDraw = this.updateStaleState() || needsFullDraw;
           receivedData = true;
@@ -1431,6 +1412,16 @@ class CrimsonBearWatchface {
         this.refreshStartedAt = 0;
         needsFullDraw = needsFullDraw || this.state.error !== value;
         this.state.error = value;
+      // @if luped
+      } else if (key === "RESULT") {
+        // The phone's "<action>:<outcome>" for a watch request, shown in the
+        // status strip until the next reading: a short buzz when it was carried
+        // out, a double buzz when it wasn't.
+        this.result = value;
+        if (value.endsWith(":ok")) Vibes.shortPulse();
+        else Vibes.doublePulse();
+        needsFullDraw = true;
+      // @endif
       } else if (key === "CONFIGURED") {
         const configured = Boolean(value);
         needsFullDraw =

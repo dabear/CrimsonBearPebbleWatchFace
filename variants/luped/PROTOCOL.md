@@ -50,18 +50,19 @@ The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
 The watch may ask the host for an action with `COMMAND`: `mute:<minutes>`
-(mute its alerts), `bolus`, `forcedbolus` (the host skips only its
-recommendation check) or `carbs`. The watch sends no amount; the host decides it
-and acts only if its plugin declares the capability and its user allowed it.
-The host answers each request on `RESULT`, kept short as
+(mute its alerts), `bolus:<units>`, `forcedbolus:<units>` (the host skips only
+its recommendation check) or `carbs:<grams>`, with the amount chosen on the
+watch. The host runs its own checks and acts only if its plugin declares the
+capability and its user allowed it; a request without a valid amount is
+answered `failed`. The host answers each request on `RESULT`, kept short as
 `<action>:<outcome>` (for example `mute:ok`, `bolus:refused`, `carbs:ok`);
 outcomes are `ok`, `refused`, `ignored` (the plugin doesn't offer it) and
-`failed`, and the reason is in the host's log. These actions are a test stage: before
-they are offered to users, the watchface must react to `RESULT` (it ignores it
-today, so a refused or failed request looks the same as a delivered one), and
-the requests need authenticating beyond the encrypted Bluetooth link and a
-deliberate confirmation on the watch (see the proposal's section 9). Test builds send one of these on a shake (`SHAKE_COMMAND`, empty by
-default because listening keeps the accelerometer running).
+`failed`, and the reason is in the host's log. Luped shows the `RESULT` text in
+the status strip under the ring until the next reading, with a short buzz for
+`ok` and a double buzz otherwise. Luped has no way to send these requests yet
+(a watchface gets no button presses), and before they are offered to users the
+requests need authenticating beyond the encrypted Bluetooth link and a
+deliberate confirmation on the watch (see the proposal's section 9).
 
 Alloy turns a watchface's writes off whenever a non-system session (the
 host's PPoGATT session) opens or closes, and only a new `Message` turns them
