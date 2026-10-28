@@ -124,8 +124,25 @@ PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant luped --b
 
 Luped needs a direct watch connection from a supported iPhone app such as Loop
 or Trio; it has no PebbleKit JS companion and does not fetch glucose on its own.
-Add `--install` to install the selected build, or `--publish` to publish the
-selected variant to the RePebble store. Luped is
+Add `--install` to install the selected build (`--cloudpebble` installs through
+CloudPebble instead of the connected phone), or `--publish` to publish the
+selected variant to the RePebble store.
+
+Every build lists the memory limits: the Alloy archive size against its guard,
+the XS machine the C stub asks for (the default 32 KB static block, or Luped's
+52 KB from the app heap), and every module in the archive, flagging any the
+watchface does not import. `--install` then restarts the watchface with logs on
+and prints its XS memory on the watch, for example:
+
+```text
+XS memory on the watch (peak of 15 samples; used includes garbage not yet collected):
+  slots      15296 /   32752 B   46.7%
+  chunks      6212 /   16384 B   37.9%
+  stack       2240 /    4096 B   54.7%
+  app heap free for PebbleOS: 28748 B
+```
+
+What runs out first is the XS machine, not the archive size; see AGENTS.md. Luped is
 written to `build/luped-cgm.pbw`; CrimsonBear remains `build/pebble.pbw`. The
 variants have independent UUIDs and can be installed together. The mobile
 integration contract is documented in

@@ -6,6 +6,7 @@ repo_root="$(pwd)"
 
 do_build=false
 do_install=false
+install_target="--phone"
 do_publish=false
 do_minify=true
 skip_deps=false
@@ -15,10 +16,12 @@ variant="crimsonbear"
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
+Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--cloudpebble] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
 
 With no arguments, the script interactively selects actions. Explicit action flags
-run without prompts. --install targets the connected phone; --publish pushes main
+run without prompts. --install targets the connected phone (--cloudpebble installs
+through CloudPebble instead) and then measures the watchface's XS memory on the
+watch; --publish pushes main
 to GitHub and publishes the release to the RePebble store without requiring
 --build or --install. Both variants publish under their own store listing. The Pebble
 publisher still performs its mandatory package build. Minification is ON by default: it
@@ -45,6 +48,7 @@ else
         ;;
       --build) do_build=true ;;
       --install) do_install=true ;;
+      --cloudpebble) install_target="--cloudpebble" ;;
       --publish) do_publish=true ;;
       --minify) do_minify=true ;;
       --no-minify) do_minify=false ;;
@@ -115,6 +119,70 @@ pebble_bin="${PEBBLE_BIN:-}"
 if [[ -z "$pebble_bin" ]]; then
   pebble_bin="$(command -v pebble || true)"
 fi
+# Memory limits. The archive guard below is a coarse proxy; what actually
+# runs out is the XS machine (see AGENTS.md): by default a fixed 32 KB static
+# block, or the stack/slot/chunk sizes the variant's C stub asks for, taken
+# from the app heap (about 122 KB on a Pebble Time 2, shared with AppMessage
+# buffers and PebbleOS).
+print_xs_machine() {
+  local stub="$stage/src/c/mdbl.c" stack slot chunk
+  stack="$(sed -nE 's/.*_XS_STACK \(([0-9]+) \* 1024\).*/\1/p' "$stub")"
+  slot="$(sed -nE 's/.*_XS_SLOT \(([0-9]+) \* 1024\).*/\1/p' "$stub")"
+  chunk="$(sed -nE 's/.*_XS_CHUNK \(([0-9]+) \* 1024\).*/\1/p' "$stub")"
+  if [[ -n "$stack" && -n "$slot" && -n "$chunk" ]]; then
+    echo "XS machine: stack ${stack} KB + slots ${slot} KB + chunks ${chunk} KB = $((stack + slot + chunk)) KB from the app heap (src/c/mdbl.c)."
+  else
+    echo "XS machine: default 32 KB static block (stack 6 KB; slot and chunk heaps start at 8 KB each and grow inside the block)."
+  fi
+}
+
+# Every module the manifest matches is compiled into the archive, imported or
+# not; list them so an unused one (typings JSON, a shared helper) shows up.
+print_archive_modules() {
+  local files="$stage/build/mods/emery/mcrun/tmp/pebble/release/embeddedjs/files" xsb name size
+  [[ -d "$files" ]] || return 0
+  echo "Archive modules (emery):"
+  for xsb in "$files"/*.xsb; do
+    name="$(basename "$xsb" .xsb)"
+    size="$(wc -c < "$xsb" | tr -d ' ')"
+    if [[ "$name" == "main" || ("$variant" != "luped" && "$name" == "protocol") ]]; then
+      printf '  %-24s %7s B\n' "$name" "$size"
+    else
+      printf '  %-24s %7s B  <- not imported by %s; check the manifest\n' "$name" "$size" "$display_name"
+    fi
+  done
+}
+
+# After an install: restart the watchface with app logs on and report its XS
+# memory from the firmware's instrumentation (needs
+# kModdableCreationFlagLogInstrumentation in the creation record).
+print_xs_usage() {
+  local line
+  echo "Measuring XS memory on the watch (15 s)..."
+  line="$( (echo "APP='$app_uuid'; WAIT=15"; echo "exec(open('$PWD/scripts/xs-usage.py').read())"; echo "exit()") \
+    | "$pebble_bin" repl "$install_target" 2>&1 | grep -o 'XSUSAGE.*' | tail -1)"
+  case "$line" in
+    "XSUSAGE FATAL"*) echo "XS memory: the watchface crashed: ${line#XSUSAGE FATAL }" >&2; return 1 ;;
+    "XSUSAGE NONE"|"") echo "XS memory: no instrumentation received (the C stub needs kModdableCreationFlagLogInstrumentation)."; return 0 ;;
+  esac
+  python3 - "$line" <<'PY'
+import sys
+v = dict(kv.split("=") for kv in sys.argv[1].split()[1:])
+v = {k: int(x) for k, x in v.items()}
+def row(name, used, avail, warn):
+    pct = 100 * used / avail if avail else 0
+    flag = "  <- close to the limit" if pct >= warn else ""
+    print("  %-8s %7d / %7d B  %5.1f%%%s" % (name, used, avail, pct, flag))
+print("XS memory on the watch (peak of %d samples; used includes garbage not yet collected):" % v["samples"])
+row("slots", v["slot_used"], v["slot_avail"], 85)
+row("chunks", v["chunk_used"], v["chunk_avail"], 85)
+row("stack", v["stack_used"], v["stack_avail"], 75)
+free = v["appfree_min"]
+print("  app heap free for PebbleOS: %d B%s" % (free, "  <- low, keep 12 KB or more" if free < 12 * 1024 else ""))
+print("  garbage collections: %d, keys: %d" % (v["gcs"], v["keys"]))
+PY
+}
+
 if [[ -z "$pebble_bin" || ! -x "$pebble_bin" ]]; then
   echo "Set PEBBLE_BIN to an executable pebble-tool command." >&2
   exit 1
@@ -138,6 +206,7 @@ else
   store_description="A Nightscout CGM watchface for Pebble Time 2 and Pebble Round 2."
 fi
 version="$(node -p "require('./$package_file').version")"
+app_uuid="$(node -p "require('./$package_file').pebble.uuid")"
 stage="build/variants/$variant/project"
 
 assemble_watchface() {
@@ -385,6 +454,8 @@ if [[ "$do_build" == true ]]; then
       "$platform" "$app_size" "$resource_size" "$alloy_headroom" "$alloy_headroom_percent"
   done
   echo "Alloy limit: $alloy_limit bytes (build fails at or above this size)."
+  print_xs_machine
+  print_archive_modules
   cp "$stage/build/project.pbw" "$artifact"
   test -s "$artifact"
   artifact_size="$(wc -c < "$artifact" | tr -d ' ')"
@@ -402,8 +473,9 @@ if [[ "$do_install" == true ]]; then
     echo "$artifact is missing; include --build first." >&2
     exit 1
   fi
-  echo "Installing $display_name $version on the connected phone..."
-  "$pebble_bin" install "$artifact" --phone
+  echo "Installing $display_name $version (${install_target#--})..."
+  "$pebble_bin" install "$artifact" "$install_target"
+  print_xs_usage
 fi
 
 if [[ "$do_publish" == true ]]; then

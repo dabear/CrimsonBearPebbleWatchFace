@@ -18,8 +18,12 @@ int main(void) {
     .stack = LUPED_XS_STACK,
     .slot = LUPED_XS_SLOT,
     .chunk = LUPED_XS_CHUNK,
+    // Memory counters for scripts/build-release.sh --install; the firmware only
+    // sends them while a log listener is connected.
 #ifdef PBL_DEBUG
-    .flags = kModdableCreationFlagDebug
+    .flags = kModdableCreationFlagLogInstrumentation | kModdableCreationFlagDebug
+#else
+    .flags = kModdableCreationFlagLogInstrumentation
 #endif
   };
   moddable_createMachine(&creation);
