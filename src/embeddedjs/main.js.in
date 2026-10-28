@@ -544,13 +544,17 @@ class CrimsonBearWatchface {
   // Background and setup-state layouts
 
   // @if luped
-  drawVariantRing(cx, cy, radius) {
+  // An open loop opens the ring at the top, like Loop's own status ring; the
+  // disc is cleared first so a closed ring drawn earlier can't show in the gap.
+  drawVariantRing(cx, cy, radius, open = false) {
     const outerRadius = radius - 3;
     const ringWidth = Math.min(10, Math.max(9, Math.round(outerRadius * 0.12)));
     const glucose = Number(this.state.glucose);
     const ringColor = this.stale ? this.colors.graph : this.glucoseColor(glucose);
-    this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, 0, 360);
-    this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, 0, 360);
+    const from = open ? 20 : 0;
+    if (open) this.render.drawCircle(this.colors.pale, cx, cy, outerRadius, 0, 360);
+    this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, from, 360 - from);
+    this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, from, 360 - from);
     this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);
     this.render.drawCircle(
       this.colors.white,
@@ -847,7 +851,7 @@ class CrimsonBearWatchface {
     if (!preserveStatic) this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     this.drawCgmStatus(0, statusY, width, statusHeight, !preserveStatic);
     // @if luped
-    this.drawVariantRing(cx, cy, radius);
+    this.drawVariantRing(cx, cy, radius, this.state.closedLoop === 0);
     // @else
     this.bearBackdrop(cx, cy, radius);
     this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);

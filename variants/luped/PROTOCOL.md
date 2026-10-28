@@ -33,7 +33,8 @@ the left of the status strip (dimmed once the loop is stale) and Loop's status
 ring with the minutes since the last loop in the top-right corner (on the
 status strip on round screens): a full ring for a closed loop, open at the top
 for an open loop, green up to 6 minutes, yellow up to 16, red after that, as
-Loop's own ring. A host that sends no loop status gets neither. The full-screen
+Loop's own ring. In an open loop the glucose ring itself is open at the top too.
+A host that sends no loop status gets neither. The full-screen
 ring does not show them.
 
 **History (index 4).** Only the graph uses it, and the full-screen ring has no
