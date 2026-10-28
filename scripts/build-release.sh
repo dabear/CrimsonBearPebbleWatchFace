@@ -214,7 +214,11 @@ prepare_stage() {
   rm -rf "$stage"
   mkdir -p "$stage/src/c" "$stage/src/embeddedjs" "$stage/resources/images"
   cp src/c/mdbl.c "$stage/src/c/mdbl.c"
-  cp src/embeddedjs/protocol.js "$stage/src/embeddedjs/protocol.js"
+  # Luped imports nothing from protocol.js; leaving it out keeps it out of the
+  # Alloy archive, where every module counts against the memory limit.
+  if [[ "$variant" != "luped" ]]; then
+    cp src/embeddedjs/protocol.js "$stage/src/embeddedjs/protocol.js"
+  fi
   assemble_watchface \
     src/embeddedjs/main.js.in \
     "variants/$variant/watchface-config.json" \
@@ -322,6 +326,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
     private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|bearBackdrop|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|checkGlucoseAlarm|readMessages)$/'
     for watch_module in main protocol; do
       readable_module="$stage/src/embeddedjs/$watch_module.js"
+      [[ -f "$readable_module" ]] || continue
       minified_module="$stage/src/embeddedjs/$watch_module.min.js"
       readable_module_size="$(wc -c < "$readable_module" | tr -d ' ')"
       terser_arguments=(--compress passes=3 --mangle --module --comments false)
