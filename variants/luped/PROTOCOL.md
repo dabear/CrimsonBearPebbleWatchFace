@@ -58,7 +58,7 @@ answered `failed`. The host answers each request on `RESULT`, kept short as
 `<action>:<outcome>` (for example `mute:ok`, `bolus:refused`, `carbs:ok`);
 outcomes are `ok`, `refused`, `ignored` (the plugin doesn't offer it) and
 `failed`, and the reason is in the host's log. Luped shows the `RESULT` text in
-the status strip under the ring until the next reading, with a short buzz for
+the status strip under the ring for a minute or until the next reading, with a short buzz for
 `ok` and a double buzz otherwise. Luped has no way to send these requests yet
 (a watchface gets no button presses), and before they are offered to users the
 requests need authenticating beyond the encrypted Bluetooth link and a
@@ -74,8 +74,10 @@ index 39 lists the last 5 host-alert buzzes as `[alert event, alert level,
 start (ms since Unix epoch), outcome]`. PebbleOS silently drops an app's
 vibration while another one plays and cancels it when a system pop-up closes,
 so the outcome records whether a pop-up covered the watchface during the
-4.7-second buzz: `-1` not covered, `0` already covered when the buzz started,
-otherwise the milliseconds into the buzz.
+4.7-second buzz: `-2` the buzz call failed, `-1` not covered, `0` already
+covered when the buzz started, otherwise the milliseconds into the buzz. Index
+40 counts alert events that arrived while Watch Alarms was off (level 0, no
+buzz).
 
 Loop delivers these messages over its own PPoGATT session (the watch stays
 connected to the Pebble app at the same time) through the LupedKitWatchFace

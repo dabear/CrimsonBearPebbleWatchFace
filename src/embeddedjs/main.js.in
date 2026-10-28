@@ -255,6 +255,7 @@ class CrimsonBearWatchface {
       minuteEventLateMaxMs: 0,
       // @if luped
       popups: 0,
+      silentAlertEvents: 0,
       buzzes: [],
       // @endif
     };
@@ -341,6 +342,7 @@ class CrimsonBearWatchface {
       // @if luped
       d.popups,
       d.buzzes,
+      d.silentAlertEvents,
       // @endif
     ];
   }
@@ -964,6 +966,14 @@ class CrimsonBearWatchface {
       if (late >= 1000) this.countDiagnostic("lateMinuteEvents");
     }
     this.lastMinuteEventAt = now;
+    // @if luped
+    // A request's outcome shows for a minute (or until the next reading), so a
+    // CGM gap can't leave it on screen.
+    if (this.result && now >= this.resultUntil) {
+      this.result = null;
+      this.requestRender(3);
+    }
+    // @endif
     if (now - this.lastBatterySampleAt >= BATTERY_SAMPLE_INTERVAL_MS) {
       this.updateBattery();
       this.lastBatterySampleAt = now;
@@ -1137,10 +1147,7 @@ class CrimsonBearWatchface {
 
   checkConnection() {
     const isConnected = Boolean(watch.connected && watch.connected.app);
-    // @if luped
-    // @else
     console.log(`Connected: ${isConnected}`);
-    // @endif
     this.setPhoneConnected(isConnected);
   }
 
@@ -1310,20 +1317,26 @@ class CrimsonBearWatchface {
   // PebbleOS drops an app's buzz while another vibration plays and cancels it
   // when a system pop-up closes, without telling the app. The last 5 buzzes
   // are kept in the diagnostics as [event, level, start time, outcome] so a
-  // missed one can be matched to a pop-up: outcome -1 not covered, 0 already
-  // covered, otherwise the ms into the buzz a pop-up covered the face.
+  // missed one can be matched to a pop-up: outcome -2 vibe() failed, -1 not
+  // covered, 0 already covered, otherwise the ms into the buzz a pop-up covered
+  // the face. Events that arrive at level 0 (Watch Alarms off) are counted.
   checkHostAlert() {
     const event = this.state.alertEvent;
-    if (
-      this.lastAlertEvent !== undefined &&
-      event !== this.lastAlertEvent &&
-      this.state.hostAlertLevel > 0
-    ) {
-      vibe();
-      this.ensureDiagnosticsWindow();
-      const buzzes = this.diagnostics.buzzes;
-      buzzes.push([event, this.state.hostAlertLevel, Date.now(), this.coveredAt ? 0 : -1]);
-      if (buzzes.length > 5) buzzes.shift();
+    if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent) {
+      if (this.state.hostAlertLevel > 0) {
+        const buzz = [event, this.state.hostAlertLevel, Date.now(), this.coveredAt ? 0 : -1];
+        try {
+          vibe();
+        } catch (_) {
+          buzz[3] = -2;
+        }
+        this.ensureDiagnosticsWindow();
+        const buzzes = this.diagnostics.buzzes;
+        buzzes.push(buzz);
+        if (buzzes.length > 5) buzzes.shift();
+      } else {
+        this.countDiagnostic("silentAlertEvents");
+      }
     }
     this.lastAlertEvent = event;
   }
@@ -1424,9 +1437,10 @@ class CrimsonBearWatchface {
       // @if luped
       } else if (key === "RESULT") {
         // The phone's "<action>:<outcome>" for a watch request, shown in the
-        // status strip until the next reading: a short buzz when it was carried
+        // status strip for a minute or until the next reading: a short buzz when it was carried
         // out, a double buzz when it wasn't.
         this.result = value;
+        this.resultUntil = Date.now() + 60000;
         if (value.endsWith(":ok")) Vibes.shortPulse();
         else Vibes.doublePulse();
         needsFullDraw = true;
