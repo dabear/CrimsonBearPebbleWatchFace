@@ -668,8 +668,12 @@ class CrimsonBearWatchface {
         height
       );
     // @if luped
+    // The space left of the ring holds a request's outcome; it is repainted on
+    // every render so an older one never shows through.
+    this.render.fillRectangle(this.colors.ink, x, y, 36, height);
     if (this.result) this.text(this.result, this.fonts.status, this.colors.white, x + 5, y + 1);
     // @endif
+
     this.text(
       value,
       this.fonts.status,
@@ -1133,7 +1137,10 @@ class CrimsonBearWatchface {
 
   checkConnection() {
     const isConnected = Boolean(watch.connected && watch.connected.app);
+    // @if luped
+    // @else
     console.log(`Connected: ${isConnected}`);
+    // @endif
     this.setPhoneConnected(isConnected);
   }
 
@@ -1195,8 +1202,10 @@ class CrimsonBearWatchface {
       // @if luped
       // Alloy turns writes off whenever the phone's app session (Loop's, not the
       // Pebble app's) opens or closes, and only a new Message turns them back on.
-      // Reopen it, at most every 30 s; the new one sends what is pending.
-      if (Date.now() - (this.reopenedAt || 0) > 30000) {
+      // Reopen it, at most every 30 s; the new one sends what is pending. Not
+      // before the first message from the phone: until then writes wait for the
+      // startup handshake, and reopening would drop the phone's first reply.
+      if (this.lastDataSignature && Date.now() - (this.reopenedAt || 0) > 30000) {
         this.reopenedAt = Date.now();
         this.message.close();
         this.startMessageService();
@@ -1414,11 +1423,13 @@ class CrimsonBearWatchface {
         this.state.error = value;
       // @if luped
       } else if (key === "RESULT") {
-        // The phone's "<action>:<outcome>" for a watch request, shown in the
-        // status strip until the next reading: a short buzz when it was carried
-        // out, a double buzz when it wasn't.
-        this.result = value;
-        if (value.endsWith(":ok")) Vibes.shortPulse();
+        // The phone's "<action>:<outcome>" for a watch request, shown left of
+        // the ring until the next reading as the action's initial and ok/no
+        // (B bolus, F forced bolus, C carbs, M mute): a short buzz when it was
+        // carried out, a double buzz when it wasn't.
+        const ok = value.endsWith(":ok");
+        this.result = value[0].toUpperCase() + (ok ? " ok" : " no");
+        if (ok) Vibes.shortPulse();
         else Vibes.doublePulse();
         needsFullDraw = true;
       // @endif
