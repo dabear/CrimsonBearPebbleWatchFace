@@ -11,23 +11,23 @@ in response to the watch's one-time startup `COMMAND: "refresh"` request.
 `DATA` is a 15-element array (protocol version 1); hosts may send only the
 first 10, and the watch reads every field by index:
 
-| Index | Value                                                                                          |
-| ----: | ---------------------------------------------------------------------------------------------- |
-|     0 | Protocol version (`1`)                                                                         |
-|     1 | Glucose value in the selected display unit                                                     |
-|     2 | Delta in the selected display unit                                                             |
-|     3 | Direction index: DoubleDown, SingleDown, FortyFiveDown, Flat, FortyFiveUp, SingleUp, DoubleUp  |
-|     4 | Up to 12 glucose values, oldest first, for the graph. `[]` in full-screen mode (index 7 = `1`) |
-|     5 | Units: `0` mg/dL, `1` mmol/L                                                                   |
-|     6 | Reading timestamp in Unix milliseconds                                                         |
-|     7 | Full-screen ring: `0` ring with graph, `1` full-screen ring                                    |
-|     8 | Host-issued alert level: `0` none, `1` info, `2` warning, `3` critical                         |
-|     9 | Alert event: changes each time the host fires an alert, including repeats                      |
-|    10 | Insulin on board (U, 1 decimal), or `null`                                                     |
-|    11 | Carbs on board (g, whole), or `null`                                                           |
-|    12 | Last loop completed (ms since Unix epoch), or `null`                                           |
-|    13 | Closed loop: `1`, open loop: `0`, or `null`                                                    |
-|    14 | Status line the phone formatted (ISF & target as `ISF<tab>target` around the ring), or `null`  |
+| Index | Value                                                                                                                  |
+| ----: | ---------------------------------------------------------------------------------------------------------------------- |
+|     0 | Protocol version (`1`)                                                                                                 |
+|     1 | Glucose value in the selected display unit                                                                             |
+|     2 | Delta in the selected display unit                                                                                     |
+|     3 | Direction index: DoubleDown, SingleDown, FortyFiveDown, Flat, FortyFiveUp, SingleUp, DoubleUp                          |
+|     4 | Up to 12 glucose values, oldest first, for the graph. `[]` in full-screen mode (index 7 = `1`)                         |
+|     5 | Units: `0` mg/dL, `1` mmol/L                                                                                           |
+|     6 | Reading timestamp in Unix milliseconds                                                                                 |
+|     7 | Full-screen ring: `0` ring with graph, `1` full-screen ring                                                            |
+|     8 | Host glucose alert: `0` none, `1` low, `2` urgent low, `3` high, `4` predicted low; negative while Watch Alarms is off |
+|     9 | Alert event: changes each time the host fires an alert, including repeats                                              |
+|    10 | Insulin on board (U, 1 decimal), or `null`                                                                             |
+|    11 | Carbs on board (g, whole), or `null`                                                                                   |
+|    12 | Last loop completed (ms since Unix epoch), or `null`                                                                   |
+|    13 | Closed loop: `1`, open loop: `0`, or `null`                                                                            |
+|    14 | Status line the phone formatted (ISF & target as `ISF<tab>target` around the ring), or `null`                          |
 
 **Loop status (indexes 10–13).** In the graph layout Luped shows IOB and COB at
 the left of the status strip (dimmed once the loop is stale) and Loop's status
@@ -60,20 +60,24 @@ full-screen off, the host sends a new `DATA` with the history at once. An empty
 history in graph mode shows "Waiting for CGM" in the graph area.
 
 **Alerts (indexes 8-9).** The host evaluates its own glucose alerts and applies
-its own mute; the watch does not evaluate thresholds. Index 8 is the highest
-active alert level, `0` while the user has turned watch alarms off. Index 9 is
+its own mute; the watch has no thresholds. Index 8 is the most important active
+glucose alert (urgent low, low, high, predicted low; `0` when none), negative
+while the user has turned watch alarms off. Index 9 is
 an alert event the host advances every time it fires an alert, including each
 repeat of an alert that is still active, whether or not watch alarms are on.
 The host persists it so a restart can't reuse the value the watch last saw; it
 wraps at 1000. The watch buzzes with the glucose-alarm pattern when the event
-differs from the last one it saw and the level is above `0` (any level: a host
-without the iOS critical-alert entitlement sends urgent alerts at warning
-level). It records the event on every `DATA`, even when it doesn't buzz, and
+differs from the last one it saw and index 8 is above `0` (the same pattern
+for every alert). It records the event on every `DATA`, even when it doesn't buzz, and
 records the first event after the watchface starts without buzzing. So the
 watch buzzes when the host fires, repeats with the host, and stops when the
-user acknowledges on the phone. Thresholds and repeat intervals do not travel;
-the ring and graph are coloured from built-in, unit-aware limits (70/180 mg/dL,
-3.9/10 mmol/L). Independently, the watch gives one short buzz when its latest
+user acknowledges on the phone. Thresholds and repeat intervals do not travel.
+Index 8 colours the ring and the glucose: red for low and urgent low, amber for
+high, green otherwise (including predicted low), whatever its sign. The colour
+follows the host's alert episode, which ends when glucose recovers, not when the
+user acknowledges; with the host's alerts muted or turned off it stays green.
+History points in the graph are one neutral colour, and the graph scales to the
+readings. Independently, the watch gives one short buzz when its latest
 reading becomes 15 minutes old.
 
 The app may send `ERROR` for a temporary data-source error. It may request a

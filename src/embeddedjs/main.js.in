@@ -103,7 +103,7 @@ class CrimsonBearWatchface {
       updated: 0,
       configured: false,
       fullScreen: false,
-      hostAlertLevel: 0,
+      hostAlertState: 0,
       error: null,
       battery: 100,
     };
@@ -196,12 +196,22 @@ class CrimsonBearWatchface {
     this.render.drawText(string, font, color, left, y);
   }
 
+  // @if luped
+  // Luped has no thresholds: the host's active glucose alert (DATA index 8,
+  // negative while Watch Alarms is off) colours the current glucose: red for
+  // low and urgent low, amber for high, green otherwise.
+  glucoseColor() {
+    const alert = Math.abs(Number(this.state.hostAlertState) || 0);
+    return alert === 1 || alert === 2 ? this.colors.low : alert === 3 ? this.colors.high : this.colors.crimson;
+  }
+  // @else
   glucoseColor(value) {
     if (value == null) return this.colors.ink;
     if (value <= this.state.low) return this.colors.low;
     if (value >= this.state.high) return this.colors.high;
     return this.colors.crimson;
   }
+  // @endif
 
   glucoseText() {
     if (this.stale) return "ERR";
@@ -441,6 +451,12 @@ class CrimsonBearWatchface {
     const margin = mmol ? 1.1 : 20;
     const floor = mmol ? 2.2 : 40;
     const ceiling = mmol ? 22.2 : 400;
+    // @if luped
+    // No thresholds: scale to the readings, a margin above and below and at
+    // least two margins tall so a flat line doesn't fill the graph.
+    const minimum = Math.max(floor, Math.min(...this.state.readings) - margin);
+    const maximum = Math.min(ceiling, Math.max(Math.max(...this.state.readings) + margin, minimum + 2 * margin));
+    // @else
     const minimum = Math.max(
       floor,
       Math.min(this.state.low - margin, ...this.state.readings)
@@ -449,6 +465,7 @@ class CrimsonBearWatchface {
       minimum + margin,
       Math.min(ceiling, Math.max(this.state.high + margin, ...this.state.readings))
     );
+    // @endif
     return { minimum, maximum };
   }
 
@@ -520,8 +537,9 @@ class CrimsonBearWatchface {
         0,
         360
       );
+      // Past readings have no alert state: one neutral colour.
       this.render.drawCircle(
-        this.glucoseColor(values[index]),
+        this.colors.graph,
         point.x,
         point.y,
         latest ? 4 : 2,
@@ -1419,8 +1437,8 @@ class CrimsonBearWatchface {
   checkHostAlert() {
     const event = this.state.alertEvent;
     if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent) {
-      if (this.state.hostAlertLevel > 0) {
-        const buzz = [event, this.state.hostAlertLevel, Date.now(), this.coveredAt ? 0 : -1];
+      if (this.state.hostAlertState > 0) {
+        const buzz = [event, this.state.hostAlertState, Date.now(), this.coveredAt ? 0 : -1];
         try {
           vibe();
         } catch (_) {
@@ -1462,9 +1480,9 @@ class CrimsonBearWatchface {
         try {
           // @if luped
           // Minimal Luped protocol: [version, glucose, delta, trend, history,
-          // unitsFlag, timestamp, fullScreen, hostAlertLevel, alertEvent]. Alerts
-          // are host-issued (indexes 8-9); thresholds do not travel, so the watch
-          // colours its ring from its own built-in low/high.
+          // unitsFlag, timestamp, fullScreen, hostAlertState, alertEvent, ...].
+          // Alerts are host-issued (indexes 8-9). No thresholds travel and the
+          // watch has none: index 8 (the active glucose alert) colours the ring.
           const values = JSON.parse(value);
           const LUPED_DIRECTIONS = [
             "DoubleDown", "SingleDown", "FortyFiveDown", "Flat",
@@ -1477,13 +1495,9 @@ class CrimsonBearWatchface {
             direction: LUPED_DIRECTIONS[values[3]] || "Flat",
             readings: values[4] || [],
             units: mmol ? "mmol/L" : "mg/dL",
-            // Colour thresholds are watchface-side; choose them in the display
-            // unit so the ring and graph scale correctly (70/180 mg/dL).
-            low: mmol ? 3.9 : 70,
-            high: mmol ? 10 : 180,
             updated: values[6],
             fullScreen: Boolean(values[7]),
-            hostAlertLevel: values[8] || 0,
+            hostAlertState: values[8] || 0,
             alertEvent: values[9],
             // Loop status (null when the host sends none; absent from older hosts).
             iob: values[10],
