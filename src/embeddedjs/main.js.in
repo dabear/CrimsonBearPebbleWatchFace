@@ -693,17 +693,23 @@ class CrimsonBearWatchface {
     // The strip left of the CGM time holds IOB and COB (or the line the phone
     // chose), or for a minute a request's outcome; it is repainted on every
     // render so older text never shows through. It dims once the loop is stale.
+    // The glucose ring's bottom covers the middle of the strip, so the text is
+    // "left\tright": before the ring, and between the ring and the CGM time.
     this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 4 - x, height);
     const { iob, cob } = this.state;
-    const left =
-      this.result ||
-      this.state.statusLine ||
-      (iob == null ? "" : `${Number(iob).toFixed(2)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`);
-    const stale = !this.result && this.loopFreshness() > 1;
-    this.text(left, this.fonts.status, stale ? this.colors.dim : this.colors.white, x + 5, y + 1);
+    const [left, rest = ""] = (
+      this.result
+        ? this.result.replace("forcedbolus", "forced").replace(":", "\t")
+        : this.state.statusLine ||
+          (iob == null ? "" : `${Number(iob).toFixed(2)} U`) + "\t" + (cob == null ? "" : `${Math.round(cob)} g`)
+    ).split("\t");
+    const color = !this.result && this.loopFreshness() > 1 ? this.colors.dim : this.colors.white;
+    const restX = Math.round(width * 0.48) + 34;
+    this.text(left, this.fonts.status, color, x + 5, y + 1);
+    this.text(rest, this.fonts.status, color, restX, y + 1);
     // Round screens have no free corner, so the loop ring sits on the strip.
     if (screen.round)
-      this.drawLoopRing(x + 13 + this.render.getTextWidth(left, this.fonts.status), y + 2, this.colors.ink, this.colors.white);
+      this.drawLoopRing(restX + 8 + this.render.getTextWidth(rest, this.fonts.status), y + 2, this.colors.ink, this.colors.white);
     // @endif
 
     this.text(
