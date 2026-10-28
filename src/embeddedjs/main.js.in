@@ -544,16 +544,19 @@ class CrimsonBearWatchface {
   // Background and setup-state layouts
 
   // @if luped
-  // An open loop opens the ring at the top, like Loop's own status ring; the
-  // disc is cleared first so a closed ring drawn earlier can't show in the gap.
+  // An open loop opens the ring at the top like Loop's own status ring: a 90°
+  // gap (LoopCircleView trims a quarter). The disc is cleared 2 px wider than the
+  // ring so no anti-aliased edge of a closed ring drawn earlier stays in the gap,
+  // and the dark border stops short of the cuts so their ends are clean.
   drawVariantRing(cx, cy, radius, open = false) {
     const outerRadius = radius - 3;
     const ringWidth = Math.min(10, Math.max(9, Math.round(outerRadius * 0.12)));
     const glucose = Number(this.state.glucose);
     const ringColor = this.stale ? this.colors.graph : this.glucoseColor(glucose);
-    const from = open ? 20 : 0;
-    if (open) this.render.drawCircle(this.colors.pale, cx, cy, outerRadius, 0, 360);
-    this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, from, 360 - from);
+    const from = open ? 45 : 0;
+    const edge = open ? 3 : 0;
+    if (open) this.render.drawCircle(this.colors.pale, cx, cy, outerRadius + 2, 0, 360);
+    this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, from + edge, 360 - from - edge);
     this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, from, 360 - from);
     this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);
     this.render.drawCircle(
@@ -1381,7 +1384,8 @@ class CrimsonBearWatchface {
   }
 
   // Loop's status ring with the minutes since the last loop: a full ring when
-  // the loop is closed, open at the top when it is open, coloured by freshness.
+  // the loop is closed, a 90° gap at the top when it is open (as Loop), coloured
+  // by freshness.
   // Nothing when the host sends no loop status.
   drawLoopRing(x, y, background, textColor) {
     const { lastLoop, closedLoop } = this.state;
@@ -1389,7 +1393,7 @@ class CrimsonBearWatchface {
     const r = 6;
     const minutes = Math.max(0, Math.floor((Date.now() - lastLoop) / 60000));
     const color = this.colors.loop[this.loopFreshness()];
-    if (closedLoop === 0) this.render.drawCircle(color, x + r, y + r, r, 35, 325);
+    if (closedLoop === 0) this.render.drawCircle(color, x + r, y + r, r, 45, 315);
     else this.render.drawCircle(color, x + r, y + r, r, 0, 360);
     this.render.drawCircle(background, x + r, y + r, r - 2, 0, 360);
     this.text(
