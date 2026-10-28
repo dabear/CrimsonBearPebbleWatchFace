@@ -30,7 +30,8 @@
       "DATA",
       "ERROR",
       "CONFIGURED",
-      "DIAGNOSTICS"
+      "DIAGNOSTICS",
+      "RESULT"
     ],
     "resources": {
       "media": [

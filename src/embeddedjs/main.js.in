@@ -9,7 +9,9 @@ import { expandData } from "protocol";
 // @endif
 
 // @if luped
-const SHAKE_TO_MUTE = false;
+// Test builds only: what a shake asks the phone for ("mute:30", "bolus"); empty
+// is off, and nothing listens to the accelerometer.
+const SHAKE_COMMAND = "";
 // @endif
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
@@ -157,10 +159,10 @@ class CrimsonBearWatchface {
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
     // @if luped
-    // Test: a shake asks the phone to mute its alerts for 30 minutes; the phone
-    // acts on it only if its user allowed muting from the watch. Off by default:
-    // listening keeps the accelerometer running.
-    if (SHAKE_TO_MUTE)
+    // Test: a shake sends SHAKE_COMMAND; the phone acts on it only if its
+    // user allowed it there. Off by default: listening keeps the accelerometer
+    // running.
+    if (SHAKE_COMMAND)
       this.shake = new Accelerometer({
         onTap: () => {
           this.mutePending = true;
@@ -1174,9 +1176,9 @@ class CrimsonBearWatchface {
     if ((!this.refreshPending && !this.telemetryPending && !this.mutePending) || !this.message)
       return;
     const values = [];
-    // A mute request takes the COMMAND key; a pending refresh follows it.
+    // A shake request takes the COMMAND key; a pending refresh follows it.
     const mute = this.mutePending;
-    if (mute || this.refreshPending) values.push(["COMMAND", mute ? "mute:30" : "refresh"]);
+    if (mute || this.refreshPending) values.push(["COMMAND", mute ? SHAKE_COMMAND : "refresh"]);
     // @else
     if ((!this.refreshPending && !this.telemetryPending) || !this.message) return;
     const values = [];
