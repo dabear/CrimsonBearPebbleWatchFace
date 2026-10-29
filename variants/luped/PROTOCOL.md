@@ -114,7 +114,7 @@ covered when the buzz started, otherwise the milliseconds into the buzz. Index
 buzz).
 
 Loop delivers these messages over its own PPoGATT session (the watch stays
-connected to the Pebble app at the same time) through the LupedKitWatchFace
+connected to the Pebble app at the same time) through the LupedSmartwatchKit
 plugin. The phone side of this protocol is the `LupedKit` library in
 [elbbepTransport](https://github.com/dabear/elbbepTransport), which Loop links
 and other apps such as Trio can share.
