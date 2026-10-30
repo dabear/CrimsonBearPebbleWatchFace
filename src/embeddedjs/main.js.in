@@ -755,6 +755,23 @@ class CrimsonBearWatchface {
   }
   // @endif
 
+  // @if luped
+  // Shown instead of any data: the phone speaks a newer protocol (update the
+  // face), or another phone app took over the watch (restart the face).
+  warningScreen(width, height) {
+    const center = width >> 1;
+    const [title, detail, action] = this.newProtocol
+      ? ["UPDATE NEEDED", `Phone sends v${this.newProtocol}`, "Update this"]
+      : ["APP CHANGED", `${this.hostChange[0]} to ${this.hostChange[1]}`, "Restart this"];
+    this.render.fillRectangle(this.colors.crimson, 0, 0, width, height);
+    this.text("!", this.fonts.glucose, this.colors.white, center, 26, true);
+    this.text(title, this.fonts.delta, this.colors.white, center, 91, true);
+    this.text(detail, this.fonts.label, this.colors.white, center, 126, true);
+    this.text(action, this.fonts.label, this.colors.white, center, 156, true);
+    this.text("watchface", this.fonts.label, this.colors.white, center, 178, true);
+  }
+  // @endif
+
   setupScreen(width, height) {
     const center = width >> 1;
     const phoneWidth = 42;
@@ -1000,6 +1017,12 @@ class CrimsonBearWatchface {
     const footerHeight = 30;
     const headerHeight = Math.round(height * 0.54);
     const now = new Date();
+    // @if luped
+    if (this.hostChange || this.newProtocol) {
+      this.warningScreen(width, height);
+      return;
+    }
+    // @endif
     if (!this.configurationKnown) {
       this.connectingScreen(width, height);
       return;
@@ -1116,10 +1139,14 @@ class CrimsonBearWatchface {
 
   drawNow() {
     const startedAt = Date.now();
-    const contentOnly =
+    let contentOnly =
       this.state.configured &&
       this.hasRenderedConfiguredFace &&
       this.lastRenderedFullScreen === this.state.fullScreen;
+    // @if luped
+    // The warning screen covers the footer too.
+    if (this.hostChange || this.newProtocol) contentOnly = false;
+    // @endif
     const invalidatedPixels =
       this.render.width * (contentOnly ? this.render.height - 30 : this.render.height);
     let began = false;
@@ -1154,6 +1181,10 @@ class CrimsonBearWatchface {
 
   drawMinute(event) {
     if (!this.state.configured) return;
+    // @if luped
+    // The alarm buzz every minute while the warning screen shows.
+    if (this.hostChange || this.newProtocol) vibe();
+    // @endif
     const date = event && event.date ? event.date : new Date();
     const now = date.getTime();
     this.ensureDiagnosticsWindow();
@@ -1212,6 +1243,9 @@ class CrimsonBearWatchface {
 
   drawMinuteNow(minuteDate = null) {
     if (!this.state.configured) return;
+    // @if luped
+    if (this.hostChange || this.newProtocol) return;
+    // @endif
     const startedAt = Date.now();
     const footerHeight = 30;
     const footerY = this.render.height - footerHeight;
@@ -1662,6 +1696,22 @@ class CrimsonBearWatchface {
           // Alerts are host-issued (indexes 8-9). No thresholds travel and the
           // watch has none: index 8 (the active glucose alert) colours the ring.
           const values = JSON.parse(value);
+          // A newer protocol (index 0) may give these indexes other meanings:
+          // nothing is shown until the face is updated, or the phone goes back
+          // to version 1.
+          if (values[0] > 1) {
+            if (!this.newProtocol) {
+              needsFullDraw = true;
+              vibe();
+            }
+            this.newProtocol = values[0];
+            this.refreshPending = false;
+            continue;
+          }
+          if (this.newProtocol) {
+            this.newProtocol = 0;
+            needsFullDraw = true;
+          }
           const LUPED_DIRECTIONS = [
             "DoubleDown", "SingleDown", "FortyFiveDown", "Flat",
             "FortyFiveUp", "SingleUp", "DoubleUp",
@@ -1686,6 +1736,17 @@ class CrimsonBearWatchface {
             // ISF & target); null means IOB and COB, formatted here.
             statusLine: values[14],
           };
+          // The first host app named (index 15) is the one this run follows;
+          // a different one later means two phone apps share the watch, so
+          // the face stops showing data until it is restarted.
+          const host = values[15];
+          if (host != null && this.host == null) this.host = host;
+          else if (host != null && host !== this.host && !this.hostChange) {
+            this.hostChange = [this.host, host];
+            this.bolusAuth = null;
+            needsFullDraw = true;
+            vibe();
+          }
           // @else
           const data = expandData(JSON.parse(value));
           // @endif
@@ -1750,7 +1811,7 @@ class CrimsonBearWatchface {
         this.configurationKnown = true;
         this.state.configured = configured;
       // @if luped
-      } else if (key === "COMMAND" && value.startsWith("auth:v1:")) {
+      } else if (key === "COMMAND" && value.startsWith("auth:v1:") && !this.hostChange) {
         // The phone's session key for signed boluses, kept in memory only: a
         // restart forgets it and the phone sends a new one.
         const [, , sid, keyHex] = value.split(":");

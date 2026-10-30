@@ -28,12 +28,20 @@ first 10, and the watch reads every field by index:
 |    12 | Last loop completed (ms since Unix epoch), or `null`                                                                   |
 |    13 | Closed loop: `1`, open loop: `0`, or `null`                                                                            |
 |    14 | Status line the phone formatted (ISF & target as `ISF<tab>target` around the ring), or `null`                          |
-|    15 | Name of the host app sending it, such as `"Loop"` or `"Trio"`. The watch doesn't use it yet                            |
+|    15 | Name of the host app sending it, such as `"Loop"` or `"Trio"`                                                          |
 
 **Host app (index 15).** Only one app on the phone should use the watch at a
 time: if two apps both host Luped, the watch follows whichever it connects to.
-The name lets a future watchface show which app it follows, or refuse a second
-one.
+The watch keeps the first name it gets after it starts; `DATA` without a name
+changes nothing. If a later `DATA` names a different app, the watch stops
+showing data and shows "APP CHANGED" with both names and "Restart this
+watchface", forgets its bolus key and takes no new one, and buzzes the glucose
+alarm then and every minute until the watchface is restarted.
+
+**Protocol version (index 0).** A watch that gets `DATA` with a version above 1
+ignores it, shows "UPDATE NEEDED" and "Update this watchface", and buzzes the
+glucose alarm then and every minute. It shows data again once the phone sends
+version 1. A host that changes what any index means must raise the version.
 
 **Loop status (indexes 10–13).** In the graph layout Luped shows IOB and COB at
 the left of the status strip (dimmed once the loop is stale) and Loop's status
