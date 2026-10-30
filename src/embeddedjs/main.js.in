@@ -3,8 +3,141 @@ import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
 // @if luped
+import Accelerometer from "embedded:sensor/Accelerometer";
 // @else
 import { expandData } from "protocol";
+// @endif
+
+// @if luped
+// Test builds only: with this on, a shake sends SHAKE_BOLUS,
+// "<action>:<units>[:<grams>]", as a signed bolus request. Off, nothing listens
+// to the accelerometer.
+const ALLOW_REMOTE_BOLUS_BY_SHAKING_TEST_ONLY = false;
+const SHAKE_BOLUS = "signedforcedbolus:0.1:3";
+
+// Signed bolus requests (PROTOCOL.md, Signed boluses): HMAC-SHA256 in plain
+// JavaScript, as Alloy has no crypto module. Only run when the user asks for a
+// bolus, so it favours size over speed.
+// XS on the watch saturates unsigned 32-bit values (>>> 0 and Uint32Array give
+// 2147483647 for anything from 2^31), so everything here stays signed: Int32Array,
+// | 0, and >> with a mask. The bits are the same as the unsigned algorithm's.
+// SHA-256 constants as signed 32-bit values.
+const SHA256_K = [
+  1116352408, 1899447441, -1245643825, -373957723, 961987163, 1508970993, -1841331548,
+  -1424204075, -670586216, 310598401, 607225278, 1426881987, 1925078388, -2132889090,
+  -1680079193, -1046744716, -459576895, -272742522, 264347078, 604807628, 770255983, 1249150122,
+  1555081692, 1996064986, -1740746414, -1473132947, -1341970488, -1084653625, -958395405,
+  -710438585, 113926993, 338241895, 666307205, 773529912, 1294757372, 1396182291, 1695183700,
+  1986661051, -2117940946, -1838011259, -1564481375, -1474664885, -1035236496, -949202525,
+  -778901479, -694614492, -200395387, 275423344, 430227734, 506948616, 659060556, 883997877,
+  958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, -2067236844,
+  -1933114872, -1866530822, -1538233109, -1090935817, -965641998,
+];
+// SHA-256 constants as signed 32-bit values.
+const SHA256_H = [
+  1779033703, -1150833019, 1013904242, -1521486534, 1359893119, -1694144372, 528734635,
+  1541459225,
+];
+
+const ror = (x, n) => (x >>> n) | (x << (32 - n));
+
+function sha256(data) {
+  const padded = new Uint8Array(((data.length + 72) >> 6) << 6);
+  padded.set(data);
+  padded[data.length] = 0x80;
+  const bits = data.length * 8;
+  for (let i = 1; i <= 4; i++) padded[padded.length - i] = (bits >> (8 * (i - 1))) & 255;
+  const h = new Int32Array(SHA256_H);
+  const w = new Int32Array(64);
+  for (let o = 0; o < padded.length; o += 64) {
+    for (let i = 0; i < 16; i++)
+      w[i] =
+        (padded[o + 4 * i] << 24) |
+        (padded[o + 4 * i + 1] << 16) |
+        (padded[o + 4 * i + 2] << 8) |
+        padded[o + 4 * i + 3];
+    for (let i = 16; i < 64; i++) {
+      const x = w[i - 15];
+      const y = w[i - 2];
+      w[i] =
+        (w[i - 16] +
+          (ror(x, 7) ^ ror(x, 18) ^ (x >>> 3)) +
+          w[i - 7] +
+          (ror(y, 17) ^ ror(y, 19) ^ (y >>> 10))) |
+        0;
+    }
+    let a = h[0];
+    let b = h[1];
+    let c = h[2];
+    let d = h[3];
+    let e = h[4];
+    let f = h[5];
+    let g = h[6];
+    let k = h[7];
+    for (let i = 0; i < 64; i++) {
+      const t1 =
+        (k + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + SHA256_K[i] + w[i]) |
+        0;
+      const t2 = ((ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      k = g;
+      g = f;
+      f = e;
+      e = (d + t1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) | 0;
+    }
+    h[0] = (h[0] + a) | 0;
+    h[1] = (h[1] + b) | 0;
+    h[2] = (h[2] + c) | 0;
+    h[3] = (h[3] + d) | 0;
+    h[4] = (h[4] + e) | 0;
+    h[5] = (h[5] + f) | 0;
+    h[6] = (h[6] + g) | 0;
+    h[7] = (h[7] + k) | 0;
+  }
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) out[i] = (h[i >> 2] >> (24 - 8 * (i & 3))) & 255;
+  return out;
+}
+
+function hmacSha256(key, message) {
+  const block = new Uint8Array(64);
+  block.set(key.length > 64 ? sha256(key) : key);
+  const inner = new Uint8Array(64 + message.length);
+  const outer = new Uint8Array(96);
+  for (let i = 0; i < 64; i++) {
+    inner[i] = block[i] ^ 0x36;
+    outer[i] = block[i] ^ 0x5c;
+  }
+  inner.set(message, 64);
+  outer.set(sha256(inner), 64);
+  return sha256(outer);
+}
+
+function asciiBytes(text) {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  return bytes;
+}
+
+function hexBytes(hex) {
+  const bytes = new Uint8Array(hex.length >> 1);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(2 * i, 2), 16);
+  return bytes;
+}
+
+function bytesHex(bytes) {
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+  return hex;
+}
+
+// The MAC the phone expects: the first 16 bytes, as hex.
+function bolusMac(keyHex, canonical) {
+  return bytesHex(hmacSha256(hexBytes(keyHex), asciiBytes(canonical)).subarray(0, 16));
+}
 // @endif
 
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
@@ -162,6 +295,8 @@ class CrimsonBearWatchface {
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
     // @if luped
+    if (ALLOW_REMOTE_BOLUS_BY_SHAKING_TEST_ONLY)
+      this.shake = new Accelerometer({ onTap: () => this.requestSignedBolus(SHAKE_BOLUS) });
     // A system pop-up (notification, alarm, call) covering the watchface. A
     // buzz it covers within its 4.7 s gets the delay as its outcome.
     watch.addEventListener("willFocus", (focused) => {
@@ -1261,10 +1396,45 @@ class CrimsonBearWatchface {
     this.requestRender(2);
   }
 
+  // @if luped
+  // Signs "<action>:<units>[:<grams>]" with the phone's session key and sends
+  // it; without a key (the phone sends one only while it may take boluses from
+  // this watch) nothing is sent. A failed write keeps the signed command, so a
+  // resend has the same sequence and confirmation time.
+  requestSignedBolus(request) {
+    const auth = this.bolusAuth;
+    if (!auth) {
+      this.result = "bolus:no key";
+      this.resultUntil = Date.now() + 60000;
+      Vibes.doublePulse();
+      this.requestRender(2);
+      return;
+    }
+    const [action, units, grams] = request.split(":");
+    const confirmedAt = Math.floor(Date.now() / 1000);
+    auth.seq += 1;
+    const mac = bolusMac(
+      auth.key,
+      `v1|${auth.sid}|${auth.seq}|${confirmedAt}|${action}|${units}|${grams || ""}`
+    );
+    this.bolusCommand = `${request}@${confirmedAt}#${auth.sid}.${auth.seq}.${mac}`;
+    this.flushOutbound();
+  }
+
+  // @endif
   flushOutbound() {
+    // @if luped
+    if ((!this.refreshPending && !this.telemetryPending && !this.bolusCommand) || !this.message)
+      return;
+    const values = [];
+    // A bolus request takes the COMMAND key; a pending refresh follows it.
+    const bolus = this.bolusCommand;
+    if (bolus || this.refreshPending) values.push(["COMMAND", bolus || "refresh"]);
+    // @else
     if ((!this.refreshPending && !this.telemetryPending) || !this.message) return;
     const values = [];
     if (this.refreshPending) values.push(["COMMAND", "refresh"]);
+    // @endif
     if (this.telemetryPending)
       values.push(["DIAGNOSTICS", JSON.stringify(this.diagnosticsSnapshot())]);
     try {
@@ -1277,6 +1447,10 @@ class CrimsonBearWatchface {
           0
         )
       );
+      // @if luped
+      if (bolus) this.bolusCommand = null;
+      else
+      // @endif
       if (this.refreshPending) {
         // @if timedRefresh
         this.probing = !this.lastRefreshRequestedAt && Number(this.state.updated) > 0;
@@ -1571,6 +1745,13 @@ class CrimsonBearWatchface {
           this.state.configured !== configured;
         this.configurationKnown = true;
         this.state.configured = configured;
+      // @if luped
+      } else if (key === "COMMAND" && value.startsWith("auth:v1:")) {
+        // The phone's session key for signed boluses, kept in memory only: a
+        // restart forgets it and the phone sends a new one.
+        const [, , sid, keyHex] = value.split(":");
+        this.bolusAuth = { sid, key: keyHex, seq: 0 };
+      // @endif
       } else if (key === "COMMAND" && value === "diagnostics") {
         this.requestDiagnostics();
       } else if (key === "COMMAND" && value === "diagnostics-reset") {
