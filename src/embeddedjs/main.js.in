@@ -2,19 +2,22 @@ import Poco from "commodetto/Poco";
 import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
-// @if luped
+// @if allowRemoteBolusByShakingTestOnly
 import Accelerometer from "embedded:sensor/Accelerometer";
+// @endif
+// @if luped
 // @else
 import { expandData } from "protocol";
 // @endif
 
-// @if luped
-// Test builds only: with this on, a shake sends SHAKE_BOLUS,
-// "<action>:<units>[:<grams>]", as a signed bolus request. Off, nothing listens
-// to the accelerometer.
-const ALLOW_REMOTE_BOLUS_BY_SHAKING_TEST_ONLY = false;
+// @if allowRemoteBolusByShakingTestOnly
+// Test builds only (allowRemoteBolusByShakingTestOnly in watchface-config.json,
+// Luped only): a shake sends this signed bolus request,
+// "<action>:<units>[:<grams>]". Off, none of this is built in.
 const SHAKE_BOLUS = "signedforcedbolus:0.1:3";
+// @endif
 
+// @if luped
 // Signed bolus requests (PROTOCOL.md, Signed boluses): HMAC-SHA256 in plain
 // JavaScript, as Alloy has no crypto module. Only run when the user asks for a
 // bolus, so it favours size over speed.
@@ -294,9 +297,10 @@ class CrimsonBearWatchface {
     watch.addEventListener("connected", () => this.checkConnection());
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
+    // @if allowRemoteBolusByShakingTestOnly
+    this.shake = new Accelerometer({ onTap: () => this.requestSignedBolus(SHAKE_BOLUS) });
+    // @endif
     // @if luped
-    if (ALLOW_REMOTE_BOLUS_BY_SHAKING_TEST_ONLY)
-      this.shake = new Accelerometer({ onTap: () => this.requestSignedBolus(SHAKE_BOLUS) });
     // A system pop-up (notification, alarm, call) covering the watchface. A
     // buzz it covers within its 4.7 s gets the delay as its outcome.
     watch.addEventListener("willFocus", (focused) => {

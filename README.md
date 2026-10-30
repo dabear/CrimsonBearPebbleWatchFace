@@ -157,6 +157,10 @@ directory. Explicit compile-time sections include only the chosen palette, text,
 ring rendering and glucose timer policy. There is no C-preprocessor dependency,
 source-text search-and-replace, or runtime variant module overhead.
 
+`allowRemoteBolusByShakingTestOnly` (Luped only, `false` in both configs) is for
+test builds: set to `true`, a shake sends a fixed signed bolus request
+(`SHAKE_BOLUS` in `main.js.in`). Never release a build with it on.
+
 ## Development notes
 
 The shared watch code is in `src/embeddedjs/main.js.in`; phone networking and configuration are in `src/pkjs/index.js`. The watch owns ongoing CGM polling: it requests when the displayed reading reaches five minutes old, retries once at six minutes if the reading timestamp has not advanced, then throttles continued stale-reading retries to five-minute intervals. A new reading resets that sequence. The phone performs one startup fetch when PebbleKit JS becomes ready but runs no polling scheduler. Sensor reading age is calculated locally every minute for refresh and stale-state behavior. Minute, battery, and duplicate-data updates use coalesced partial redraws to reduce display work and avoid overlapping Alloy output transactions.
