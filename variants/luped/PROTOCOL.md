@@ -90,24 +90,61 @@ The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
 The watch may ask the host for an action with `COMMAND`: `mute:<minutes>`
-(mute its alerts), `bolus:<units>`, `forcedbolus:<units>` (the host skips only
-its recommendation check) or `carbs:<grams>`, with the amount chosen on the
-watch. Each request ends with `@<confirmedAt>`, when the user confirmed it, in
-whole seconds since 1970 by the watch's clock (for example `bolus:1.5@1798000000`).
-A resent request keeps the same value. The host refuses requests without it, and
-requests confirmed more than 30 seconds ago or more than 5 seconds in the
-future, so the watch's clock must be within a few seconds of the phone's (the
-Pebble app keeps it in step). The host runs its own checks and acts only if its
-plugin declares the capability and its user allowed it; a request without a
-valid amount is answered `failed`. The host answers each request on `RESULT`, kept short as
-`<action>:<outcome>` (for example `mute:ok`, `bolus:refused`, `carbs:ok`);
-outcomes are `ok`, `refused`, `ignored` (the plugin doesn't offer it) and
-`failed`, and the reason is in the host's log. Luped shows the `RESULT` text in
-the status strip under the ring for a minute or until the next reading, with a short buzz for
-`ok` and a double buzz otherwise. Luped has no way to send these requests yet
-(a watchface gets no button presses), and before they are offered to users the
-requests need authenticating beyond the encrypted Bluetooth link and a
-deliberate confirmation on the watch (see the proposal's section 9).
+(mute its alerts) or `carbs:<grams>`, with the amount chosen on the watch, or a
+signed bolus (below). Each request ends with `@<confirmedAt>`, when the user
+confirmed it, in whole seconds since 1970 by the watch's clock (for example
+`carbs:30@1798000000`). A resent request keeps the same value. The host refuses
+requests without it, and requests confirmed more than 30 seconds ago or more
+than 5 seconds in the future, so the watch's clock must be within a few seconds
+of the phone's (the Pebble app keeps it in step). The host runs its own checks
+and acts only if its plugin declares the capability and its user allowed it; a
+request without a valid amount is answered `failed`. The host answers each
+request on `RESULT`, kept short as `<action>:<outcome>` (for example `mute:ok`,
+`signedbolus:refused`, `carbs:ok`); outcomes are `ok`, `refused`, `ignored` (the
+plugin doesn't offer it) and `failed`, and the reason is in the host's log.
+Luped shows the `RESULT` text in the status strip under the ring for a minute or
+until the next reading, with a short buzz for `ok` and a double buzz otherwise.
+
+### Signed boluses
+
+Boluses are only ever signed; there is no unsigned bolus request (`bolus:` and
+`forcedbolus:` are not commands). Luped doesn't send signed boluses yet
+(a watchface gets no button presses; it needs a watchapp with a confirmation
+screen), and the plugin offers remote bolus only once that exists.
+
+- **Session key, phone to watch:** `COMMAND auth:v1:<sid>:<key>`. `sid` is 16
+  lowercase hex digits, `key` 64 (256 random bits). The phone sends a new one
+  whenever the watchface starts (its ready handshake) or the Bluetooth session
+  opens, and only while its plugin offers remote bolus. The watch keeps the key
+  in memory only (never in storage) and forgets it when it restarts; a new key
+  makes everything signed with the old one invalid.
+- **Request, watch to phone:**
+  `COMMAND signedbolus:<units>[:<grams>]@<confirmedAt>#<sid>.<seq>.<mac>`, or
+  `signedforcedbolus:` for a bolus the host checks without its recommendation.
+  `units` has at most two decimals and is above 0 (`0.01` to `99.99`, no
+  leading zeros); the host rounds it down to its pump's step. `grams` is
+  optional, a whole number from 1 to 999: the host adds those carbs first, then
+  checks the bolus against its recommendation with the carbs included. `seq`
+  starts at 1 for each key and goes up by one for each new request.
+- **Signature:** `mac` is the first 16 bytes of HMAC-SHA256 with the session
+  key over `v1|<sid>|<seq>|<confirmedAt>|<action>|<units>|<grams>` (`grams`
+  empty when there are none; every field exactly as sent), as 32 lowercase hex
+  digits. With key bytes `00 01 … 1f`,
+  `v1|0123456789abcdef|1|1798000000|signedbolus|1.5|30` gives
+  `6eb19f16b120d0b9cdb6c36ea5eb56bf`.
+- **Checks before the host hears of it:** a current key, the same `sid`, a
+  matching MAC, `seq` above the last accepted one, and the 30 s / 5 s timing
+  above. A failed check is answered `<action>:refused`.
+- **Resends:** a request is passed to the host once. Resending it while the host
+  handles it gets nothing back; resending it afterwards gets the same `RESULT`s
+  again (`carbs:<outcome>` first when it had carbs, then
+  `signedbolus:<outcome>` or `signedforcedbolus:<outcome>`).
+
+The signature proves the request is unchanged and comes from the watchface run
+that received this session's key. It doesn't prove who is wearing the watch, and
+any app installed under Luped's UUID would get the key too. The host's own
+bolus checks (permission, maximum bolus, recommendation unless forced, rate
+limits) always still apply.
 
 Alloy turns a watchface's writes off whenever a non-system session (the
 host's PPoGATT session) opens or closes, and only a new `Message` turns them
