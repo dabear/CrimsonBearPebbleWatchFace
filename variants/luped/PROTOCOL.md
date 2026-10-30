@@ -28,7 +28,7 @@ first 10, and the watch reads every field by index:
 |    12 | Last loop completed (ms since Unix epoch), or `null`                                                                   |
 |    13 | Closed loop: `1`, open loop: `0`, or `null`                                                                            |
 |    14 | Status line the phone formatted (ISF & target as `ISF<tab>target` around the ring), or `null`                          |
-|    15 | Name of the host app sending it, such as `"Loop"` or `"Trio"`. The watch doesn't use it yet                           |
+|    15 | Name of the host app sending it, such as `"Loop"` or `"Trio"`. The watch doesn't use it yet                            |
 
 **Host app (index 15).** Only one app on the phone should use the watch at a
 time: if two apps both host Luped, the watch follows whichever it connects to.
