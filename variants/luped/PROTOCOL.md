@@ -86,9 +86,14 @@ diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 The watch may ask the host for an action with `COMMAND`: `mute:<minutes>`
 (mute its alerts), `bolus:<units>`, `forcedbolus:<units>` (the host skips only
 its recommendation check) or `carbs:<grams>`, with the amount chosen on the
-watch. The host runs its own checks and acts only if its plugin declares the
-capability and its user allowed it; a request without a valid amount is
-answered `failed`. The host answers each request on `RESULT`, kept short as
+watch. Each request ends with `@<confirmedAt>`, when the user confirmed it, in
+whole seconds since 1970 by the watch's clock (for example `bolus:1.5@1798000000`).
+A resent request keeps the same value. The host refuses requests without it, and
+requests confirmed more than 30 seconds ago or more than 5 seconds in the
+future, so the watch's clock must be within a few seconds of the phone's (the
+Pebble app keeps it in step). The host runs its own checks and acts only if its
+plugin declares the capability and its user allowed it; a request without a
+valid amount is answered `failed`. The host answers each request on `RESULT`, kept short as
 `<action>:<outcome>` (for example `mute:ok`, `bolus:refused`, `carbs:ok`);
 outcomes are `ok`, `refused`, `ignored` (the plugin doesn't offer it) and
 `failed`, and the reason is in the host's log. Luped shows the `RESULT` text in
