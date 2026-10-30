@@ -8,7 +8,7 @@ The mobile app should send `CONFIGURED: 1` and a `DATA` JSON array whenever
 settings change, when a new glucose sample arrives, when its alerts change, and
 in response to the watch's one-time startup `COMMAND: "refresh"` request.
 
-`DATA` is a 15-element array (protocol version 1); hosts may send only the
+`DATA` is a 16-element array (protocol version 1); hosts may send only the
 first 10, and the watch reads every field by index:
 
 | Index | Value                                                                                                                  |
@@ -28,6 +28,12 @@ first 10, and the watch reads every field by index:
 |    12 | Last loop completed (ms since Unix epoch), or `null`                                                                   |
 |    13 | Closed loop: `1`, open loop: `0`, or `null`                                                                            |
 |    14 | Status line the phone formatted (ISF & target as `ISF<tab>target` around the ring), or `null`                          |
+|    15 | Name of the host app sending it, such as `"Loop"` or `"Trio"`. The watch doesn't use it yet                           |
+
+**Host app (index 15).** Only one app on the phone should use the watch at a
+time: if two apps both host Luped, the watch follows whichever it connects to.
+The name lets a future watchface show which app it follows, or refuse a second
+one.
 
 **Loop status (indexes 10–13).** In the graph layout Luped shows IOB and COB at
 the left of the status strip (dimmed once the loop is stale) and Loop's status
