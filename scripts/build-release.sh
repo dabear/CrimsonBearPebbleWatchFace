@@ -434,7 +434,11 @@ fi
 if [[ "$do_build" == true ]]; then
   echo "Building $display_name $version..."
   (cd "$stage" && "$pebble_bin" build)
+  # The 32,133-byte guard is for the default 32 KB XS block (CrimsonBear).
+  # Luped's own stub gives XS 52 KB from the app heap, so its limit is XS
+  # memory use, measured on the watch with --install, not the archive size.
   alloy_limit=32133
+  [[ "$variant" == luped ]] && alloy_limit=""
   echo
   printf '%-10s %12s %12s %12s %14s\n' \
     "Platform" "App binary" "Alloy size" "Headroom" "Headroom %"
@@ -443,6 +447,10 @@ if [[ "$do_build" == true ]]; then
     app_binary="$stage/build/$platform/pebble-app.bin"
     resource_size="$(wc -c < "$resource_pack" | tr -d ' ')"
     app_size="$(wc -c < "$app_binary" | tr -d ' ')"
+    if [[ -z "$alloy_limit" ]]; then
+      printf '%-10s %9s B %9s B %12s %14s\n' "$platform" "$app_size" "$resource_size" "-" "-"
+      continue
+    fi
     if ((resource_size >= alloy_limit)); then
       echo "$display_name $platform resources are $resource_size bytes; the safe limit is below $alloy_limit." >&2
       exit 1
@@ -453,7 +461,11 @@ if [[ "$do_build" == true ]]; then
     printf '%-10s %9s B %9s B %9s B %14s\n' \
       "$platform" "$app_size" "$resource_size" "$alloy_headroom" "$alloy_headroom_percent"
   done
-  echo "Alloy limit: $alloy_limit bytes (build fails at or above this size)."
+  if [[ -n "$alloy_limit" ]]; then
+    echo "Alloy limit: $alloy_limit bytes (build fails at or above this size)."
+  else
+    echo "Alloy limit: XS memory on the watch, not the archive size; use --install to measure slots, chunks and free app heap."
+  fi
   print_xs_machine
   print_archive_modules
   cp "$stage/build/project.pbw" "$artifact"
