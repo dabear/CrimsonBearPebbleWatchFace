@@ -99,9 +99,10 @@ diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
 The watch may ask the host for an action with `COMMAND`: `mute:<minutes>`
 (mute its alerts) or `carbs:<grams>`, with the amount chosen on the watch,
-`override:<preset>` (start the host's preset with that id, or that name
-ignoring case) or `override:cancel` (end the running preset), or a signed bolus
-(below). A request naming no preset, or one the host doesn't have, is answered
+`override:<preset>` (start the host's override preset with that id, or that
+name ignoring case) or `override:cancel` (end the running one),
+`temptarget:<preset>` or `temptarget:cancel` (the same for temp target presets,
+on hosts that have them), or a signed bolus (below). A request naming no preset, or one the host doesn't have, is answered
 `failed` or `refused`. Each request ends with `@<confirmedAt>`, when the user
 confirmed it, in whole seconds since 1970 by the watch's clock (for example
 `carbs:30@1798000000`). A resent request keeps the same value. The host refuses
