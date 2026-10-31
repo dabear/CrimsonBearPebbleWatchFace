@@ -1464,6 +1464,11 @@ class CrimsonBearWatchface {
   // @endif
   // @if allowShakeDebugActionTestOnly
   requestShakeDebugAction() {
+    // Feel and see that the shake registered; a RESULT from the phone replaces it.
+    Vibes.shortPulse();
+    this.result = `sent ${SHAKE_DEBUG_ACTION}`;
+    this.resultUntil = Date.now() + 60000;
+    this.requestRender(2);
     if (SHAKE_DEBUG_ACTION.startsWith("signed")) {
       this.requestSignedBolus(SHAKE_DEBUG_ACTION);
       return;
