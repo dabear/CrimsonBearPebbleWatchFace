@@ -2,7 +2,7 @@ import Poco from "commodetto/Poco";
 import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
-// @if allowRemoteBolusByShakingTestOnly
+// @if allowShakeDebugActionTestOnly
 import Accelerometer from "embedded:sensor/Accelerometer";
 // @endif
 // @if luped
@@ -10,8 +10,8 @@ import Accelerometer from "embedded:sensor/Accelerometer";
 import { expandData } from "protocol";
 // @endif
 
-// @if allowRemoteBolusByShakingTestOnly
-// Test builds only (allowRemoteBolusByShakingTestOnly in watchface-config.json,
+// @if allowShakeDebugActionTestOnly
+// Test builds only (allowShakeDebugActionTestOnly in watchface-config.json,
 // Luped only): a shake sends this watch request: a signed bolus
 // ("signedbolus:" or "signedforcedbolus:<units>[:<grams>]") is signed, anything
 // else (such as "mute:<minutes>") is sent with its confirmation time. Off, none
@@ -299,7 +299,7 @@ class CrimsonBearWatchface {
     watch.addEventListener("connected", () => this.checkConnection());
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
-    // @if allowRemoteBolusByShakingTestOnly
+    // @if allowShakeDebugActionTestOnly
     this.shake = new Accelerometer({ onTap: () => this.requestShakeDebugAction() });
     // @endif
     // @if luped
@@ -1462,7 +1462,7 @@ class CrimsonBearWatchface {
   }
 
   // @endif
-  // @if allowRemoteBolusByShakingTestOnly
+  // @if allowShakeDebugActionTestOnly
   requestShakeDebugAction() {
     if (SHAKE_DEBUG_ACTION.startsWith("signed")) {
       this.requestSignedBolus(SHAKE_DEBUG_ACTION);
