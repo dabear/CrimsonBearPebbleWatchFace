@@ -374,6 +374,21 @@ if [[ "$do_publish" == true ]]; then
     exit 1
   fi
   release_notes="${release_notes:-$(git log -1 --pretty=%s)}"
+  # The shake test sends watch requests (boluses, presets, mute) on a shake:
+  # test builds only, never a store release.
+  if node -e "process.exit(require('./variants/$variant/watchface-config.json').allowShakeDebugActionTestOnly ? 0 : 1)"; then
+    echo "allowShakeDebugActionTestOnly is on in variants/$variant/watchface-config.json; turn it off before publishing." >&2
+    exit 1
+  fi
+  if ! command -v gh >/dev/null; then
+    echo "Publishing also creates a GitHub release: install and log in to the GitHub CLI (gh)." >&2
+    exit 1
+  fi
+  release_tag="$variant-v$version"
+  if git ls-remote --exit-code --tags origin "refs/tags/$release_tag" >/dev/null; then
+    echo "$release_tag is already released; raise the version in $package_file first." >&2
+    exit 1
+  fi
 fi
 
 if [[ "$do_build" == true || "$do_publish" == true ]]; then
@@ -516,6 +531,12 @@ if [[ "$do_publish" == true ]]; then
       --icon-large "$repo_root/$store_icon_dir/$store_icon_prefix-store-icon-large.png" \
       --release-notes "$release_notes"
   )
+
+  echo "Creating GitHub release $release_tag..."
+  gh release create "$release_tag" "$artifact" \
+    --target "$(git rev-parse HEAD)" \
+    --title "$display_name $version" \
+    --notes "$release_notes"
 fi
 
 echo "Completed selected actions for $display_name $version."

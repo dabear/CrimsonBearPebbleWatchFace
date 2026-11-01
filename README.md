@@ -160,7 +160,7 @@ source-text search-and-replace, or runtime variant module overhead.
 `allowShakeDebugActionTestOnly` (Luped only, `false` in both configs) is for
 test builds: set to `true`, a shake sends a fixed watch request
 (`SHAKE_DEBUG_ACTION` in `main.js.in`: `mute:30`, or a signed bolus such as
-`signedforcedbolus:0.1:1`). Never release a build with it on.
+`signedforcedbolus:0.1:1`). `--publish` refuses to run while it is on.
 
 ## Development notes
 
