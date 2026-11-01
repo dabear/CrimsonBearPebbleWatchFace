@@ -31,6 +31,11 @@ else:
     _v = [r for r in _v if len(r) >= 15]
     peak = lambda i: max(r[i] for r in _v)
     low = lambda i: min(r[i] for r in _v)
+    # XS collects only when it runs short, so the peak includes garbage. The first
+    # sample after a collection shows what is really in use: report the last one.
+    after_gc = [r for r in _v if r[13] > 0]
+    live_slot, live_chunk = (after_gc[-1][9], after_gc[-1][7]) if after_gc else (-1, -1)
     print("XSUSAGE samples=%d appfree_min=%d chunk_used=%d chunk_avail=%d slot_used=%d slot_avail=%d "
-          "stack_used=%d stack_avail=%d gcs=%d keys=%d"
-          % (len(_v), low(6), peak(7), peak(8), peak(9), peak(10), peak(11), peak(12), sum(r[13] for r in _v), peak(14)))
+          "stack_used=%d stack_avail=%d gcs=%d keys=%d live_slot=%d live_chunk=%d"
+          % (len(_v), low(6), peak(7), peak(8), peak(9), peak(10), peak(11), peak(12), sum(r[13] for r in _v), peak(14),
+             live_slot, live_chunk))

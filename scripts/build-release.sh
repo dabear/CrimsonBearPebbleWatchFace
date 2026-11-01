@@ -173,9 +173,15 @@ def row(name, used, avail, warn):
     pct = 100 * used / avail if avail else 0
     flag = "  <- close to the limit" if pct >= warn else ""
     print("  %-8s %7d / %7d B  %5.1f%%%s" % (name, used, avail, pct, flag))
-print("XS memory on the watch (peak of %d samples; used includes garbage not yet collected):" % v["samples"])
-row("slots", v["slot_used"], v["slot_avail"], 85)
-row("chunks", v["chunk_used"], v["chunk_avail"], 85)
+if v.get("live_slot", -1) >= 0:
+    print("XS memory in use on the watch (after the last garbage collection in %d samples):" % v["samples"])
+    row("slots", v["live_slot"], v["slot_avail"], 85)
+    row("chunks", v["live_chunk"], v["chunk_avail"], 85)
+else:
+    print("XS memory in use: unknown, no garbage collection in %d samples (the peak below includes garbage)." % v["samples"])
+print("Peak, including garbage not yet collected (XS collects only when it runs short):")
+row("slots", v["slot_used"], v["slot_avail"], 101)
+row("chunks", v["chunk_used"], v["chunk_avail"], 101)
 row("stack", v["stack_used"], v["stack_avail"], 75)
 free = v["appfree_min"]
 print("  app heap free for PebbleOS: %d B%s" % (free, "  <- low, keep 12 KB or more" if free < 12 * 1024 else ""))

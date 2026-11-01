@@ -26,8 +26,9 @@ const SHAKE_DEBUG_ACTION = "mute:30";
 // XS on the watch saturates unsigned 32-bit values (>>> 0 and Uint32Array give
 // 2147483647 for anything from 2^31), so everything here stays signed: Int32Array,
 // | 0, and >> with a mask. The bits are the same as the unsigned algorithm's.
-// SHA-256 constants as signed 32-bit values.
-const SHA256_K = [
+// SHA-256 constants as signed 32-bit values, in typed arrays: one chunk each
+// rather than a slot per element.
+const SHA256_K = new Int32Array([
   1116352408, 1899447441, -1245643825, -373957723, 961987163, 1508970993, -1841331548,
   -1424204075, -670586216, 310598401, 607225278, 1426881987, 1925078388, -2132889090,
   -1680079193, -1046744716, -459576895, -272742522, 264347078, 604807628, 770255983, 1249150122,
@@ -37,12 +38,14 @@ const SHA256_K = [
   -778901479, -694614492, -200395387, 275423344, 430227734, 506948616, 659060556, 883997877,
   958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, -2067236844,
   -1933114872, -1866530822, -1538233109, -1090935817, -965641998,
-];
-// SHA-256 constants as signed 32-bit values.
-const SHA256_H = [
+]);
+const SHA256_H = new Int32Array([
   1779033703, -1150833019, 1013904242, -1521486534, 1359893119, -1694144372, 528734635,
   1541459225,
-];
+]);
+// Working buffers, reused by every hash (signing runs one hash at a time).
+const SHA256_W = new Int32Array(64);
+const SHA256_STATE = new Int32Array(8);
 
 const ror = (x, n) => (x >>> n) | (x << (32 - n));
 
@@ -52,8 +55,9 @@ function sha256(data) {
   padded[data.length] = 0x80;
   const bits = data.length * 8;
   for (let i = 1; i <= 4; i++) padded[padded.length - i] = (bits >> (8 * (i - 1))) & 255;
-  const h = new Int32Array(SHA256_H);
-  const w = new Int32Array(64);
+  const h = SHA256_STATE;
+  h.set(SHA256_H);
+  const w = SHA256_W;
   for (let o = 0; o < padded.length; o += 64) {
     for (let i = 0; i < 16; i++)
       w[i] =
@@ -107,16 +111,27 @@ function sha256(data) {
   return out;
 }
 
-function hmacSha256(key, message) {
+// The key's inner and outer padded blocks for HMAC, prepared once when the
+// phone sends the key, so signing doesn't redo them. Keys longer than a block
+// are hashed first, as HMAC requires.
+function hmacKey(key) {
   const block = new Uint8Array(64);
   block.set(key.length > 64 ? sha256(key) : key);
-  const inner = new Uint8Array(64 + message.length);
-  const outer = new Uint8Array(96);
+  const inner = new Uint8Array(64);
+  const outer = new Uint8Array(64);
   for (let i = 0; i < 64; i++) {
     inner[i] = block[i] ^ 0x36;
     outer[i] = block[i] ^ 0x5c;
   }
+  return { inner, outer };
+}
+
+function hmacSha256(key, message) {
+  const inner = new Uint8Array(64 + message.length);
+  inner.set(key.inner);
   inner.set(message, 64);
+  const outer = new Uint8Array(96);
+  outer.set(key.outer);
   outer.set(sha256(inner), 64);
   return sha256(outer);
 }
@@ -133,15 +148,21 @@ function hexBytes(hex) {
   return bytes;
 }
 
+// Lowercase hex in one string, not one string per byte.
 function bytesHex(bytes) {
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
-  return hex;
+  const codes = new Array(bytes.length * 2);
+  for (let i = 0; i < bytes.length; i++) {
+    const high = bytes[i] >> 4;
+    const low = bytes[i] & 15;
+    codes[2 * i] = high < 10 ? 48 + high : 87 + high;
+    codes[2 * i + 1] = low < 10 ? 48 + low : 87 + low;
+  }
+  return String.fromCharCode.apply(null, codes);
 }
 
-// The MAC the phone expects: the first 16 bytes, as hex.
-function bolusMac(keyHex, canonical) {
-  return bytesHex(hmacSha256(hexBytes(keyHex), asciiBytes(canonical)).subarray(0, 16));
+// The MAC the phone expects: the first 16 bytes, as hex. `key` is from `hmacKey`.
+function bolusMac(key, canonical) {
+  return bytesHex(hmacSha256(key, asciiBytes(canonical)).subarray(0, 16));
 }
 // @endif
 
@@ -1840,7 +1861,7 @@ class CrimsonBearWatchface {
         // The phone's session key for signed boluses, kept in memory only: a
         // restart forgets it and the phone sends a new one.
         const [, , sid, keyHex] = value.split(":");
-        this.bolusAuth = { sid, key: keyHex, seq: 0 };
+        this.bolusAuth = { sid, key: hmacKey(hexBytes(keyHex)), seq: 0 };
       // @endif
       } else if (key === "COMMAND" && value === "diagnostics") {
         this.requestDiagnostics();
