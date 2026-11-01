@@ -212,6 +212,9 @@ class CrimsonBearWatchface {
       low: this.render.makeColor(@COLOR_LOW@),
       high: this.render.makeColor(@COLOR_HIGH@),
       // @if luped
+      // The warning screen's background: dark red, not the accent (Luped's is a
+      // light green), so its white text reads.
+      warning: this.render.makeColor(170, 0, 0),
       // Loop's status ring: fresh, aging, stale (LoopCompletionFreshness).
       loop: [
         this.render.makeColor(0, 170, 0),
@@ -765,7 +768,7 @@ class CrimsonBearWatchface {
     const [title, detail, action] = this.newProtocol
       ? ["UPDATE NEEDED", `Phone sends v${this.newProtocol}`, "Update this"]
       : ["APP CHANGED", `${this.hostChange[0]} to ${this.hostChange[1]}`, "Restart this"];
-    this.render.fillRectangle(this.colors.crimson, 0, 0, width, height);
+    this.render.fillRectangle(this.colors.warning, 0, 0, width, height);
     this.text("!", this.fonts.glucose, this.colors.white, center, 26, true);
     this.text(title, this.fonts.delta, this.colors.white, center, 91, true);
     this.text(detail, this.fonts.label, this.colors.white, center, 126, true);
@@ -1161,6 +1164,10 @@ class CrimsonBearWatchface {
       began = false;
       this.render.end();
       this.hasRenderedConfiguredFace = this.state.configured;
+      // @if luped
+      // The warning screen isn't the face: the first draw after it repaints all of it.
+      if (this.hostChange || this.newProtocol) this.hasRenderedConfiguredFace = false;
+      // @endif
       this.lastRenderedFullScreen = this.state.fullScreen;
       this.recordDraw("full", startedAt, invalidatedPixels);
       this.renderRetryCount = 0;

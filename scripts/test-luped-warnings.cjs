@@ -143,4 +143,27 @@ receive(["DATA", data(1, "Loop")]);
 assert.equal(face.newProtocol, 0);
 assert.equal(face.state.glucose, 100);
 assert.equal(face.hostChange, undefined);
+
+// The first draw after a warning repaints the whole screen, so none of the
+// warning shows through the face; later draws repaint only the content again.
+const draws = [];
+const draw = () => {
+  const realFace = face.face;
+  face.render = {
+    width: 200,
+    height: 228,
+    begin: (...area) => draws.push(area.length ? "content" : "full"),
+    end() {},
+  };
+  face.face = () => {};
+  face.drawNow();
+  face.face = realFace;
+};
+draw();
+face.newProtocol = 2;
+draw();
+face.newProtocol = 0;
+draw();
+draw();
+assert.deepEqual(draws, ["full", "full", "full", "content"]);
 console.log("Luped host change and protocol version warnings passed");
