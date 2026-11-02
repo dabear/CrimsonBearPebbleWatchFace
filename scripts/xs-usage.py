@@ -16,6 +16,12 @@ time.sleep(1.5)
 pebble.send_packet(AppRunState(data=AppRunStateStart(uuid=_app)))
 time.sleep(WAIT)
 pebble.send_packet(AppLogShippingControl(enable=False))
+# Start the watchface again with logging off: the firmware decides on the
+# instrumentation when the app starts, so the run measured above would keep
+# sampling every second until its next restart.
+pebble.send_packet(AppRunState(data=AppRunStateStop(uuid=_app)))
+time.sleep(1.5)
+pebble.send_packet(AppRunState(data=AppRunStateStart(uuid=_app)))
 
 _rows = [l.split("instruments:", 1)[1].strip() for l in _lines if "instruments:" in l]
 _fatal = [l for l in _lines if "fxAbort" in l or "failed in fixed size heap" in l]

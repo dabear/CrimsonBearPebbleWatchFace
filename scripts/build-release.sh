@@ -6,6 +6,7 @@ repo_root="$(pwd)"
 
 do_build=false
 do_install=false
+measure_memory=false
 install_target="--phone"
 do_publish=false
 do_minify=true
@@ -16,12 +17,14 @@ variant="crimsonbear"
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--cloudpebble] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
+Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--measure-memory] [--cloudpebble] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
 
 With no arguments, the script interactively selects actions. Explicit action flags
 run without prompts. --install targets the connected phone (--cloudpebble installs
-through CloudPebble instead) and then measures the watchface's XS memory on the
-watch; --publish pushes main
+through CloudPebble instead). --measure-memory (Luped, with --build --install)
+builds with the firmware's XS memory counters, measures the watchface's memory on
+the watch after installing, then restarts it without them; never publish that
+build, as the counters wake the watch every second; --publish pushes main
 to GitHub and publishes the release to the RePebble store without requiring
 --build or --install. Both variants publish under their own store listing. The Pebble
 publisher still performs its mandatory package build. Minification is ON by default: it
@@ -48,6 +51,7 @@ else
         ;;
       --build) do_build=true ;;
       --install) do_install=true ;;
+      --measure-memory) measure_memory=true ;;
       --cloudpebble) install_target="--cloudpebble" ;;
       --publish) do_publish=true ;;
       --minify) do_minify=true ;;
@@ -153,9 +157,9 @@ print_archive_modules() {
   done
 }
 
-# After an install: restart the watchface with app logs on and report its XS
-# memory from the firmware's instrumentation (needs
-# kModdableCreationFlagLogInstrumentation in the creation record).
+# After a --measure-memory install: restart the watchface with app logs on,
+# report its XS memory from the firmware's instrumentation, then restart it
+# with logs off so the counters stop.
 print_xs_usage() {
   local line
   echo "Measuring XS memory on the watch (15 s)..."
@@ -163,7 +167,7 @@ print_xs_usage() {
     | "$pebble_bin" repl "$install_target" 2>&1 | grep -o 'XSUSAGE.*' | tail -1)"
   case "$line" in
     "XSUSAGE FATAL"*) echo "XS memory: the watchface crashed: ${line#XSUSAGE FATAL }" >&2; return 1 ;;
-    "XSUSAGE NONE"|"") echo "XS memory: no instrumentation received (the C stub needs kModdableCreationFlagLogInstrumentation)."; return 0 ;;
+    "XSUSAGE NONE"|"") echo "XS memory: no instrumentation received (the C stub needs LUPED_XS_INSTRUMENTATION)."; return 0 ;;
   esac
   python3 - "$line" <<'PY'
 import sys
@@ -290,7 +294,11 @@ prepare_stage() {
   mkdir -p "$stage/src/c" "$stage/src/embeddedjs" "$stage/resources/images"
   # Luped sizes its own XS machine (variants/luped/src/c/mdbl.c).
   if [[ -f "variants/$variant/src/c/mdbl.c" ]]; then
-    cp "variants/$variant/src/c/mdbl.c" "$stage/src/c/mdbl.c"
+    if [[ "$measure_memory" == true ]]; then
+      { echo "#define LUPED_XS_INSTRUMENTATION 1"; cat "variants/$variant/src/c/mdbl.c"; } > "$stage/src/c/mdbl.c"
+    else
+      cp "variants/$variant/src/c/mdbl.c" "$stage/src/c/mdbl.c"
+    fi
   else
     cp src/c/mdbl.c "$stage/src/c/mdbl.c"
   fi
@@ -364,6 +372,17 @@ delete packageData.devDependencies;
 fs.writeFileSync(packagePath, `${JSON.stringify(packageData, null, 2)}\n`);
 NODE
 }
+
+if [[ "$measure_memory" == true ]]; then
+  if [[ "$do_publish" == true ]]; then
+    echo "--measure-memory builds with the XS memory counters and cannot be used with --publish." >&2
+    exit 2
+  fi
+  if [[ "$do_build" != true || "$do_install" != true ]]; then
+    echo "--measure-memory needs --build and --install." >&2
+    exit 2
+  fi
+fi
 
 if [[ "$do_publish" == true && "$skip_deps" == true ]]; then
   echo "--skip-deps is for local builds only and cannot be used with --publish." >&2
@@ -485,7 +504,7 @@ if [[ "$do_build" == true ]]; then
   if [[ -n "$alloy_limit" ]]; then
     echo "Alloy limit: $alloy_limit bytes (build fails at or above this size)."
   else
-    echo "Alloy limit: XS memory on the watch, not the archive size; use --install to measure slots, chunks and free app heap."
+    echo "Alloy limit: XS memory on the watch, not the archive size; use --install --measure-memory to measure slots, chunks and free app heap."
   fi
   print_xs_machine
   print_archive_modules
@@ -508,7 +527,9 @@ if [[ "$do_install" == true ]]; then
   fi
   echo "Installing $display_name $version (${install_target#--})..."
   "$pebble_bin" install "$artifact" "$install_target"
-  print_xs_usage
+  if [[ "$measure_memory" == true ]]; then
+    print_xs_usage
+  fi
 fi
 
 if [[ "$do_publish" == true ]]; then

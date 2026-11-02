@@ -10,6 +10,17 @@
 #define LUPED_XS_SLOT (32 * 1024)
 #define LUPED_XS_CHUNK (16 * 1024)
 
+// Memory counters only in a measuring build (scripts/build-release.sh
+// --measure-memory defines LUPED_XS_INSTRUMENTATION). When app logging is on as
+// the watchface starts, they wake the watch every second for as long as it runs,
+// and the watchface keeps them after logging is turned off. Release builds had
+// them from 0.1.11 to 0.1.20, when the battery lasted about 6 days instead of 9-10.
+#ifdef LUPED_XS_INSTRUMENTATION
+#define LUPED_XS_FLAGS kModdableCreationFlagLogInstrumentation
+#else
+#define LUPED_XS_FLAGS 0
+#endif
+
 int main(void) {
   Window *window = window_create();
   window_stack_push(window, true);
@@ -18,12 +29,10 @@ int main(void) {
     .stack = LUPED_XS_STACK,
     .slot = LUPED_XS_SLOT,
     .chunk = LUPED_XS_CHUNK,
-    // Memory counters for scripts/build-release.sh --install; the firmware only
-    // sends them while a log listener is connected.
 #ifdef PBL_DEBUG
-    .flags = kModdableCreationFlagLogInstrumentation | kModdableCreationFlagDebug
+    .flags = LUPED_XS_FLAGS | kModdableCreationFlagDebug
 #else
-    .flags = kModdableCreationFlagLogInstrumentation
+    .flags = LUPED_XS_FLAGS
 #endif
   };
   moddable_createMachine(&creation);

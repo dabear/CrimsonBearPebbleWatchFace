@@ -131,8 +131,10 @@ selected variant to the RePebble store.
 Every build lists the memory limits: the Alloy archive size against its guard,
 the XS machine the C stub asks for (the default 32 KB static block, or Luped's
 52 KB from the app heap), and every module in the archive, flagging any the
-watchface does not import. `--install` then restarts the watchface with logs on
-and prints its XS memory on the watch, for example:
+watchface does not import. `--install --measure-memory` builds with the
+firmware's memory counters, restarts the watchface with logs on, prints its XS
+memory on the watch, then restarts it without them (the counters wake the watch
+every second; never publish that build), for example:
 
 ```text
 XS memory on the watch (peak of 15 samples; used includes garbage not yet collected):
