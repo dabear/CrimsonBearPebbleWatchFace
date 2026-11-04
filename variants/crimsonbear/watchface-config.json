@@ -1,6 +1,4 @@
 {
-  "allowShakeDebugActionTestOnly": false,
-  "timedRefresh": true,
   "colors": {
     "ink": [64, 0, 16],
     "ringBorder": [64, 0, 16],

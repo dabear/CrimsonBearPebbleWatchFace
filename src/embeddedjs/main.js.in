@@ -2,28 +2,15 @@ import Poco from "commodetto/Poco";
 import Message from "pebble/message";
 import Vibes from "pebble/vibes";
 import Battery from "embedded:sensor/Battery";
-// @if allowShakeDebugActionTestOnly
-import Accelerometer from "embedded:sensor/Accelerometer";
-// @endif
 import { expandData } from "protocol";
 
-// @if allowShakeDebugActionTestOnly
-// Test builds only (allowShakeDebugActionTestOnly in watchface-config.json,
-// Luped only): a shake sends this watch request: a signed bolus
-// ("signedbolus:" or "signedforcedbolus:<units>[:<grams>]") is signed, anything
-// else (such as "mute:<minutes>") is sent with its confirmation time. Off, none
-// of this is built in.
-const SHAKE_DEBUG_ACTION = "mute:30";
-// @endif
 
 
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
-// @if timedRefresh
 const WATCH_REFRESH_READING_AGE_MS = 5 * 60 * 1000;
 const WATCH_REFRESH_QUICK_RETRY_AGE_MS = 6 * 60 * 1000;
 const WATCH_REFRESH_STALE_RETRY_MS = 5 * 60 * 1000;
-// @endif
 // Grace period to let diagnostics ride an already-outgoing message before
 // forcing a dedicated radio wake-up for telemetry alone.
 const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
@@ -127,14 +114,12 @@ class CrimsonBearWatchface {
     this.refreshPending = true;
     this.lastRefreshRequestedAt = 0;
     this.refreshStartedAt = 0;
-    // @if timedRefresh
     // Learned wait (ms) past the 5-minute mark for the next reading to reach
     // the source; probeHits counts first-probe hits, and probing marks an
     // outstanding first probe.
     this.probeDelay = 0;
     this.probeHits = 0;
     this.probing = false;
-    // @endif
     this.isConnected = false;
     this.phoneDisconnectedAt = 0;
     this.telemetryPending = false;
@@ -154,9 +139,6 @@ class CrimsonBearWatchface {
     watch.addEventListener("connected", () => this.checkConnection());
     this.checkConnection();
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
-    // @if allowShakeDebugActionTestOnly
-    this.shake = new Accelerometer({ onTap: () => this.requestShakeDebugAction() });
-    // @endif
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
       this.lastRenderedFullScreen = null;
@@ -884,7 +866,6 @@ class CrimsonBearWatchface {
       now - this.telemetryDueAt >= DIAGNOSTICS_PIGGYBACK_GRACE_MS
     )
       this.flushOutbound();
-    // @if timedRefresh
     const updated = Number(this.state.updated);
     const readingAge =
       Number.isFinite(updated) && updated > 0 ? Math.max(0, now - updated) : Infinity;
@@ -899,7 +880,6 @@ class CrimsonBearWatchface {
     // when due, and retry rejected writes from this existing minute event.
     if (this.refreshPending || refreshDue)
       this.requestDataRefresh();
-    // @endif
     const staleChanged = this.updateStaleState(now);
     this.requestRender(staleChanged ? 3 : 2, 0, date);
   }
@@ -1067,22 +1047,6 @@ class CrimsonBearWatchface {
     this.requestRender(2);
   }
 
-  // @if allowShakeDebugActionTestOnly
-  requestShakeDebugAction() {
-    // Feel and see that the shake registered; a RESULT from the phone replaces it.
-    Vibes.shortPulse();
-    this.result = `sent ${SHAKE_DEBUG_ACTION}`;
-    this.resultUntil = Date.now() + 60000;
-    this.requestRender(2);
-    if (SHAKE_DEBUG_ACTION.startsWith("signed")) {
-      this.requestSignedBolus(SHAKE_DEBUG_ACTION);
-      return;
-    }
-    this.bolusCommand = `${SHAKE_DEBUG_ACTION}@${Math.floor(Date.now() / 1000)}`;
-    this.flushOutbound();
-  }
-
-  // @endif
   flushOutbound() {
     if ((!this.refreshPending && !this.telemetryPending) || !this.message) return;
     const values = [];
@@ -1100,9 +1064,7 @@ class CrimsonBearWatchface {
         )
       );
       if (this.refreshPending) {
-        // @if timedRefresh
         this.probing = !this.lastRefreshRequestedAt && Number(this.state.updated) > 0;
-        // @endif
         this.refreshPending = false;
         this.lastRefreshRequestedAt = Date.now();
         this.refreshStartedAt = this.lastRefreshRequestedAt;
@@ -1143,8 +1105,7 @@ class CrimsonBearWatchface {
     return true;
   }
 
-  // CrimsonBear evaluates glucose thresholds on the watch. Luped does not — its
-  // alerts are host-issued (see checkHostAlert) — so this method is omitted there.
+  // Glucose thresholds are evaluated on the watch.
   checkGlucoseAlarm() {
     const glucose = Number(this.state.glucose);
     const updated = Number(this.state.updated);
@@ -1220,7 +1181,6 @@ class CrimsonBearWatchface {
             this.state.error != null;
           this.lastDataSignature = signature;
           Object.assign(this.state, data, { error: null });
-          // @if timedRefresh
           // A missed first probe waits a minute longer (max 3); six straight
           // hits try a minute earlier again.
           if (this.probing) {
@@ -1233,7 +1193,6 @@ class CrimsonBearWatchface {
               this.probeHits = 0;
             }
           }
-          // @endif
           if (readingAdvanced) this.lastRefreshRequestedAt = 0;
           this.refreshPending = false;
           needsFullDraw = this.updateStaleState() || needsFullDraw;
@@ -1243,9 +1202,7 @@ class CrimsonBearWatchface {
           this.state.error = "Bad response";
         }
       } else if (key === "ERROR") {
-        // @if timedRefresh
         this.probing = false;
-        // @endif
         this.refreshPending = false;
         this.refreshStartedAt = 0;
         needsFullDraw = needsFullDraw || this.state.error !== value;

@@ -298,12 +298,6 @@ if [[ "$do_publish" == true ]]; then
     exit 1
   fi
   release_notes="${release_notes:-$(git log -1 --pretty=%s)}"
-  # The shake test sends watch requests (boluses, presets, mute) on a shake:
-  # test builds only, never a store release.
-  if node -e "process.exit(require('./variants/$variant/watchface-config.json').allowShakeDebugActionTestOnly ? 0 : 1)"; then
-    echo "allowShakeDebugActionTestOnly is on in variants/$variant/watchface-config.json; turn it off before publishing." >&2
-    exit 1
-  fi
   if ! command -v gh >/dev/null; then
     echo "Publishing also creates a GitHub release: install and log in to the GitHub CLI (gh)." >&2
     exit 1
