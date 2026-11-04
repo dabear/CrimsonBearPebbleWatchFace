@@ -110,59 +110,22 @@ strings, Pebble/renderer APIs, and exported protocol names remain compatible wit
 PebbleKit JS and the future mobile-app protocol. Interactive mode offers the same
 choice.
 
-## Build variants
+## Build options
 
-The repository also builds the standalone **Luped CGM** variant. Variant
-selection happens before the Moddable bytecode compile, so Luped does not carry
-CrimsonBear branding, bear drawing code, periodic glucose refresh logic, or the
-PebbleKit JS Nightscout/settings companion.
+The release script assembles
+[`src/embeddedjs/main.js.in`](src/embeddedjs/main.js.in) in an isolated build
+directory using the palette, text and compile-time options in
+[`variants/crimsonbear/watchface-config.json`](variants/crimsonbear/watchface-config.json),
+with the repository's existing Node.js runtime. Explicit compile-time sections
+include only the chosen options; there is no C-preprocessor dependency or runtime
+option overhead. Every build lists the Alloy archive size against its guard, the
+XS machine the C stub asks for (the default 32 KB static block), and every module
+in the archive, flagging any the watchface does not import. What runs out first is
+the XS machine, not the archive size; see AGENTS.md.
 
-```sh
-PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant crimsonbear --build
-PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant luped --build
-```
-
-Luped needs a direct watch connection from a supported iPhone app such as Loop
-or Trio; it has no PebbleKit JS companion and does not fetch glucose on its own.
-Add `--install` to install the selected build (`--cloudpebble` installs through
-CloudPebble instead of the connected phone), or `--publish` to publish the
-selected variant to the RePebble store.
-
-Every build lists the memory limits: the Alloy archive size against its guard,
-the XS machine the C stub asks for (the default 32 KB static block, or Luped's
-52 KB from the app heap), and every module in the archive, flagging any the
-watchface does not import. `--install --measure-memory` builds with the
-firmware's memory counters, restarts the watchface with logs on, prints its XS
-memory on the watch, then restarts it without them (the counters wake the watch
-every second; never publish that build), for example:
-
-```text
-XS memory on the watch (peak of 15 samples; used includes garbage not yet collected):
-  slots      15296 /   32752 B   46.7%
-  chunks      6212 /   16384 B   37.9%
-  stack       2240 /    4096 B   54.7%
-  app heap free for PebbleOS: 28748 B
-```
-
-What runs out first is the XS machine, not the archive size; see AGENTS.md. Luped is
-written to `build/luped-cgm.pbw`; CrimsonBear remains `build/pebble.pbw`. The
-variants have independent UUIDs and can be installed together. The mobile
-integration contract is documented in
-[`variants/luped/PROTOCOL.md`](variants/luped/PROTOCOL.md).
-
-The shell script selects
-[`variants/crimsonbear/watchface-config.json`](variants/crimsonbear/watchface-config.json)
-or [`variants/luped/watchface-config.json`](variants/luped/watchface-config.json),
-then uses the repository's existing Node.js runtime to assemble
-[`src/embeddedjs/main.js.in`](src/embeddedjs/main.js.in) in the isolated build
-directory. Explicit compile-time sections include only the chosen palette, text,
-ring rendering and glucose timer policy. There is no C-preprocessor dependency,
-source-text search-and-replace, or runtime variant module overhead.
-
-`allowShakeDebugActionTestOnly` (Luped only, `false` in both configs) is for
-test builds: set to `true`, a shake sends a fixed watch request
-(`SHAKE_DEBUG_ACTION` in `main.js.in`: `mute:30`, or a signed bolus such as
-`signedforcedbolus:0.1:1`). `--publish` refuses to run while it is on.
+The Loop-styled **Luped CGM** watchface, which used to be built from this
+repository, now lives in its own repository,
+[dabear/LupedPebbleWatchFace](https://github.com/dabear/LupedPebbleWatchFace).
 
 ## Development notes
 

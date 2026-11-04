@@ -4,10 +4,10 @@ const vm = require("node:vm");
 let now = 1000000;
 const source = fs
   .readFileSync("src/embeddedjs/main.js.in", "utf8")
-  .replace(/\/\/ @if (\w+)\n([\s\S]*?)\/\/ @endif/g, (_, flag, body) => {
-    const [yes, no = ""] = body.split(/\/\/ @else\n/);
-    return flag === "luped" ? no : yes;
-  })
+  .replace(
+    /\/\/ @if \w+\n([\s\S]*?)\/\/ @endif/g,
+    (_, body) => body.split(/\/\/ @else\n/)[0]
+  )
   .replace(/^import .*;\n/gm, "")
   .replace(/@[A-Z][A-Z0-9_]*@/g, "0")
   .replace(

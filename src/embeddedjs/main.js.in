@@ -5,10 +5,7 @@ import Battery from "embedded:sensor/Battery";
 // @if allowShakeDebugActionTestOnly
 import Accelerometer from "embedded:sensor/Accelerometer";
 // @endif
-// @if luped
-// @else
 import { expandData } from "protocol";
-// @endif
 
 // @if allowShakeDebugActionTestOnly
 // Test builds only (allowShakeDebugActionTestOnly in watchface-config.json,
@@ -19,152 +16,6 @@ import { expandData } from "protocol";
 const SHAKE_DEBUG_ACTION = "mute:30";
 // @endif
 
-// @if luped
-// Signed bolus requests (PROTOCOL.md, Signed boluses): HMAC-SHA256 in plain
-// JavaScript, as Alloy has no crypto module. Only run when the user asks for a
-// bolus, so it favours size over speed.
-// XS on the watch saturates unsigned 32-bit values (>>> 0 and Uint32Array give
-// 2147483647 for anything from 2^31), so everything here stays signed: Int32Array,
-// | 0, and >> with a mask. The bits are the same as the unsigned algorithm's.
-// SHA-256 constants as signed 32-bit values, in typed arrays: one chunk each
-// rather than a slot per element.
-const SHA256_K = new Int32Array([
-  1116352408, 1899447441, -1245643825, -373957723, 961987163, 1508970993, -1841331548,
-  -1424204075, -670586216, 310598401, 607225278, 1426881987, 1925078388, -2132889090,
-  -1680079193, -1046744716, -459576895, -272742522, 264347078, 604807628, 770255983, 1249150122,
-  1555081692, 1996064986, -1740746414, -1473132947, -1341970488, -1084653625, -958395405,
-  -710438585, 113926993, 338241895, 666307205, 773529912, 1294757372, 1396182291, 1695183700,
-  1986661051, -2117940946, -1838011259, -1564481375, -1474664885, -1035236496, -949202525,
-  -778901479, -694614492, -200395387, 275423344, 430227734, 506948616, 659060556, 883997877,
-  958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, -2067236844,
-  -1933114872, -1866530822, -1538233109, -1090935817, -965641998,
-]);
-const SHA256_H = new Int32Array([
-  1779033703, -1150833019, 1013904242, -1521486534, 1359893119, -1694144372, 528734635,
-  1541459225,
-]);
-// Working buffers, reused by every hash (signing runs one hash at a time).
-const SHA256_W = new Int32Array(64);
-const SHA256_STATE = new Int32Array(8);
-
-const ror = (x, n) => (x >>> n) | (x << (32 - n));
-
-function sha256(data) {
-  const padded = new Uint8Array(((data.length + 72) >> 6) << 6);
-  padded.set(data);
-  padded[data.length] = 0x80;
-  const bits = data.length * 8;
-  for (let i = 1; i <= 4; i++) padded[padded.length - i] = (bits >> (8 * (i - 1))) & 255;
-  const h = SHA256_STATE;
-  h.set(SHA256_H);
-  const w = SHA256_W;
-  for (let o = 0; o < padded.length; o += 64) {
-    for (let i = 0; i < 16; i++)
-      w[i] =
-        (padded[o + 4 * i] << 24) |
-        (padded[o + 4 * i + 1] << 16) |
-        (padded[o + 4 * i + 2] << 8) |
-        padded[o + 4 * i + 3];
-    for (let i = 16; i < 64; i++) {
-      const x = w[i - 15];
-      const y = w[i - 2];
-      w[i] =
-        (w[i - 16] +
-          (ror(x, 7) ^ ror(x, 18) ^ (x >>> 3)) +
-          w[i - 7] +
-          (ror(y, 17) ^ ror(y, 19) ^ (y >>> 10))) |
-        0;
-    }
-    let a = h[0];
-    let b = h[1];
-    let c = h[2];
-    let d = h[3];
-    let e = h[4];
-    let f = h[5];
-    let g = h[6];
-    let k = h[7];
-    for (let i = 0; i < 64; i++) {
-      const t1 =
-        (k + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + SHA256_K[i] + w[i]) |
-        0;
-      const t2 = ((ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
-      k = g;
-      g = f;
-      f = e;
-      e = (d + t1) | 0;
-      d = c;
-      c = b;
-      b = a;
-      a = (t1 + t2) | 0;
-    }
-    h[0] = (h[0] + a) | 0;
-    h[1] = (h[1] + b) | 0;
-    h[2] = (h[2] + c) | 0;
-    h[3] = (h[3] + d) | 0;
-    h[4] = (h[4] + e) | 0;
-    h[5] = (h[5] + f) | 0;
-    h[6] = (h[6] + g) | 0;
-    h[7] = (h[7] + k) | 0;
-  }
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) out[i] = (h[i >> 2] >> (24 - 8 * (i & 3))) & 255;
-  return out;
-}
-
-// The key's inner and outer padded blocks for HMAC, prepared once when the
-// phone sends the key, so signing doesn't redo them. Keys longer than a block
-// are hashed first, as HMAC requires.
-function hmacKey(key) {
-  const block = new Uint8Array(64);
-  block.set(key.length > 64 ? sha256(key) : key);
-  const inner = new Uint8Array(64);
-  const outer = new Uint8Array(64);
-  for (let i = 0; i < 64; i++) {
-    inner[i] = block[i] ^ 0x36;
-    outer[i] = block[i] ^ 0x5c;
-  }
-  return { inner, outer };
-}
-
-function hmacSha256(key, message) {
-  const inner = new Uint8Array(64 + message.length);
-  inner.set(key.inner);
-  inner.set(message, 64);
-  const outer = new Uint8Array(96);
-  outer.set(key.outer);
-  outer.set(sha256(inner), 64);
-  return sha256(outer);
-}
-
-function asciiBytes(text) {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
-  return bytes;
-}
-
-function hexBytes(hex) {
-  const bytes = new Uint8Array(hex.length >> 1);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(2 * i, 2), 16);
-  return bytes;
-}
-
-// Lowercase hex in one string, not one string per byte.
-function bytesHex(bytes) {
-  const codes = new Array(bytes.length * 2);
-  for (let i = 0; i < bytes.length; i++) {
-    const high = bytes[i] >> 4;
-    const low = bytes[i] & 15;
-    codes[2 * i] = high < 10 ? 48 + high : 87 + high;
-    codes[2 * i + 1] = low < 10 ? 48 + low : 87 + low;
-  }
-  return String.fromCharCode.apply(null, codes);
-}
-
-// The MAC the phone expects: the first 16 bytes, as hex. `key` is from `hmacKey`.
-function bolusMac(key, canonical) {
-  return bytesHex(hmacSha256(key, asciiBytes(canonical)).subarray(0, 16));
-}
-// @endif
 
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
@@ -232,18 +83,6 @@ class CrimsonBearWatchface {
       bluetooth: this.render.makeColor(0, 128, 255),
       low: this.render.makeColor(@COLOR_LOW@),
       high: this.render.makeColor(@COLOR_HIGH@),
-      // @if luped
-      // The warning screen's background: dark red, not the accent (Luped's is a
-      // light green), so its white text reads.
-      warning: this.render.makeColor(170, 0, 0),
-      // Loop's status ring: fresh, aging, stale (LoopCompletionFreshness).
-      loop: [
-        this.render.makeColor(0, 170, 0),
-        this.render.makeColor(255, 170, 0),
-        this.render.makeColor(255, 0, 0),
-      ],
-      dim: this.render.makeColor(170, 170, 170),
-      // @endif
     };
     this.state = {
       glucose: null,
@@ -251,17 +90,12 @@ class CrimsonBearWatchface {
       direction: "NONE",
       readings: [],
       units: "mg/dL",
-      // @if luped
-      low: 70,
-      high: 180,
-      // @else
       urgentLow: 55,
       low: 70,
       high: 180,
       alarmEnabled: true,
       lowSnooze: 15,
       highSnooze: 30,
-      // @endif
       updated: 0,
       configured: false,
       fullScreen: false,
@@ -270,11 +104,8 @@ class CrimsonBearWatchface {
       battery: 100,
     };
     this.configurationKnown = false;
-    // @if luped
-    // @else
     this.alarmZone = "normal";
     this.lastAlarmAt = 0;
-    // @endif
     this.stale = false;
     this.lastDataSignature = null;
     this.footerState = {
@@ -326,18 +157,6 @@ class CrimsonBearWatchface {
     // @if allowShakeDebugActionTestOnly
     this.shake = new Accelerometer({ onTap: () => this.requestShakeDebugAction() });
     // @endif
-    // @if luped
-    // A system pop-up (notification, alarm, call) covering the watchface. A
-    // buzz it covers within its 4.7 s gets the delay as its outcome.
-    watch.addEventListener("willFocus", (focused) => {
-      this.coveredAt = focused ? 0 : Date.now();
-      if (focused) return;
-      this.countDiagnostic("popups");
-      const buzz = this.diagnostics.buzzes[this.diagnostics.buzzes.length - 1];
-      if (buzz && buzz[3] < 0 && this.coveredAt - buzz[2] < 4700)
-        buzz[3] = this.coveredAt - buzz[2] || 1;
-    });
-    // @endif
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
       this.lastRenderedFullScreen = null;
@@ -361,22 +180,12 @@ class CrimsonBearWatchface {
     this.render.drawText(string, font, color, left, y);
   }
 
-  // @if luped
-  // Luped has no thresholds: the host's active glucose alert (DATA index 8,
-  // negative while Watch Alarms is off) colours the current glucose: red for
-  // low and urgent low, amber for high, green otherwise.
-  glucoseColor() {
-    const alert = Math.abs(Number(this.state.hostAlertState) || 0);
-    return alert === 1 || alert === 2 ? this.colors.low : alert === 3 ? this.colors.high : this.colors.crimson;
-  }
-  // @else
   glucoseColor(value) {
     if (value == null) return this.colors.ink;
     if (value <= this.state.low) return this.colors.low;
     if (value >= this.state.high) return this.colors.high;
     return this.colors.crimson;
   }
-  // @endif
 
   glucoseText() {
     if (this.stale) return "ERR";
@@ -413,12 +222,9 @@ class CrimsonBearWatchface {
       dataMessages: 0,
       refreshRequests: 0,
       refreshDeferred: 0,
-      // @if luped
-      // @else
       urgentLowAlarms: 0,
       lowAlarms: 0,
       highAlarms: 0,
-      // @endif
       staleTransitions: 0,
       staleAlarms: 0,
       staleAgeMaxMs: 0,
@@ -437,11 +243,6 @@ class CrimsonBearWatchface {
       lateMinuteEvents: 0,
       minuteEventLateMs: 0,
       minuteEventLateMaxMs: 0,
-      // @if luped
-      popups: 0,
-      silentAlertEvents: 0,
-      buzzes: [],
-      // @endif
     };
   }
 
@@ -494,16 +295,9 @@ class CrimsonBearWatchface {
       d.dataMessages,
       d.refreshRequests,
       d.refreshDeferred,
-      // @if luped
-      // On-watch threshold alarms are CrimsonBear only.
-      0,
-      0,
-      0,
-      // @else
       d.urgentLowAlarms,
       d.lowAlarms,
       d.highAlarms,
-      // @endif
       d.incomingMessages,
       d.incomingBytes,
       d.outgoingMessages,
@@ -523,11 +317,6 @@ class CrimsonBearWatchface {
       d.phoneDisconnectedMs + activeDisconnectMs,
       Math.max(d.phoneDisconnectedMaxMs, activeDisconnectMs),
       this.isConnected ? 0 : 1,
-      // @if luped
-      d.popups,
-      d.buzzes,
-      d.silentAlertEvents,
-      // @endif
     ];
   }
 
@@ -616,12 +405,6 @@ class CrimsonBearWatchface {
     const margin = mmol ? 1.1 : 20;
     const floor = mmol ? 2.2 : 40;
     const ceiling = mmol ? 22.2 : 400;
-    // @if luped
-    // No thresholds: scale to the readings, a margin above and below and at
-    // least two margins tall so a flat line doesn't fill the graph.
-    const minimum = Math.max(floor, Math.min(...this.state.readings) - margin);
-    const maximum = Math.min(ceiling, Math.max(Math.max(...this.state.readings) + margin, minimum + 2 * margin));
-    // @else
     const minimum = Math.max(
       floor,
       Math.min(this.state.low - margin, ...this.state.readings)
@@ -630,7 +413,6 @@ class CrimsonBearWatchface {
       minimum + margin,
       Math.min(ceiling, Math.max(this.state.high + margin, ...this.state.readings))
     );
-    // @endif
     return { minimum, maximum };
   }
 
@@ -648,11 +430,7 @@ class CrimsonBearWatchface {
   }
 
   graph(x, y, width, height) {
-    // @if luped
-    this.render.fillRectangle(this.colors.panel, x, y, width, height);
-    // @else
     this.render.fillRectangle(this.colors.graph, x, y, width, height);
-    // @endif
     const values = this.state.readings;
     if (!values.length) {
       this.text(
@@ -682,36 +460,11 @@ class CrimsonBearWatchface {
         points[index - 1].y,
         points[index].x,
         points[index].y,
-        // @if luped
-        this.colors.graph,
-        3
-        // @else
         this.colors.ink,
         4
-        // @endif
       );
     }
     points.forEach((point, index) => {
-      // @if luped
-      const latest = index === points.length - 1;
-      this.render.drawCircle(
-        latest ? this.colors.ink : this.colors.white,
-        point.x,
-        point.y,
-        latest ? 6 : 4,
-        0,
-        360
-      );
-      // Past readings have no alert state: one neutral colour.
-      this.render.drawCircle(
-        this.colors.graph,
-        point.x,
-        point.y,
-        latest ? 4 : 2,
-        0,
-        360
-      );
-      // @else
       this.render.drawCircle(
         this.glucoseColor(values[index]),
         point.x,
@@ -720,42 +473,11 @@ class CrimsonBearWatchface {
         0,
         360
       );
-      // @endif
     });
   }
 
   // Background and setup-state layouts
 
-  // @if luped
-  // An open loop opens the ring at the top like Loop's own status ring: a 90°
-  // gap (LoopCircleView trims a quarter). Only the gap's wedge is cleared, 2 px
-  // wider than the ring so no anti-aliased edge of a closed ring drawn earlier
-  // stays in it (clearing the whole disc would paint over the status strip
-  // below), and the dark border stops short of the cuts so their ends are clean.
-  drawVariantRing(cx, cy, radius, open = false) {
-    const outerRadius = radius - 3;
-    const ringWidth = Math.min(10, Math.max(9, Math.round(outerRadius * 0.12)));
-    const glucose = Number(this.state.glucose);
-    const ringColor = this.stale ? this.colors.graph : this.glucoseColor(glucose);
-    const from = open ? 45 : 0;
-    const edge = open ? 3 : 0;
-    if (open) {
-      this.render.drawCircle(this.colors.pale, cx, cy, outerRadius + 2, 0, from + 2);
-      this.render.drawCircle(this.colors.pale, cx, cy, outerRadius + 2, 358 - from, 360);
-    }
-    this.render.drawCircle(this.colors.ringBorder, cx, cy, outerRadius, from + edge, 360 - from - edge);
-    this.render.drawCircle(ringColor, cx, cy, outerRadius - 1, from, 360 - from);
-    this.render.drawCircle(this.colors.pale, cx, cy, outerRadius - ringWidth, 0, 360);
-    this.render.drawCircle(
-      this.colors.white,
-      cx,
-      cy,
-      outerRadius - ringWidth - 2,
-      0,
-      360
-    );
-  }
-  // @else
   bearBackdrop(cx, cy, radius) {
     const earY = cy - Math.round(radius * 0.72);
     const earOffset = Math.round(radius * 0.72);
@@ -779,24 +501,7 @@ class CrimsonBearWatchface {
       );
     }
   }
-  // @endif
 
-  // @if luped
-  // Shown instead of any data: the phone speaks a newer protocol (update the
-  // face), or another phone app took over the watch (restart the face).
-  warningScreen(width, height) {
-    const center = width >> 1;
-    const [title, detail, action] = this.newProtocol
-      ? ["UPDATE NEEDED", `Phone sends v${this.newProtocol}`, "Update this"]
-      : ["APP CHANGED", `${this.hostChange[0]} to ${this.hostChange[1]}`, "Restart this"];
-    this.render.fillRectangle(this.colors.warning, 0, 0, width, height);
-    this.text("!", this.fonts.glucose, this.colors.white, center, 26, true);
-    this.text(title, this.fonts.delta, this.colors.white, center, 91, true);
-    this.text(detail, this.fonts.label, this.colors.white, center, 126, true);
-    this.text(action, this.fonts.label, this.colors.white, center, 156, true);
-    this.text("watchface", this.fonts.label, this.colors.white, center, 178, true);
-  }
-  // @endif
 
   setupScreen(width, height) {
     const center = width >> 1;
@@ -889,28 +594,6 @@ class CrimsonBearWatchface {
         textWidth + 2,
         height
       );
-    // @if luped
-    // The strip left of the CGM time holds IOB and COB (or the line the phone
-    // chose), or for a minute a request's outcome; it is repainted on every
-    // render so older text never shows through. It dims once the loop is stale.
-    // The glucose ring's bottom covers the middle of the strip, so a line too long
-    // for the space before it (ISF & target) comes as "left\tright": the second
-    // part goes between the ring and the CGM time.
-    this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 4 - x, height);
-    const { iob, cob } = this.state;
-    const [left, rest = ""] = (
-      this.result ||
-      this.state.statusLine ||
-      (iob == null ? "" : `${Number(iob).toFixed(1)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`)
-    ).split("\t");
-    const color = !this.result && this.loopFreshness() > 1 ? this.colors.dim : this.colors.white;
-    const restX = Math.round(width * 0.48) + 34;
-    this.text(left, this.fonts.status, color, x + 5, y + 1);
-    this.text(rest, this.fonts.status, color, restX, y + 1);
-    // Round screens have no free corner, so the loop ring sits on the strip.
-    if (screen.round)
-      this.drawLoopRing(restX + 8 + this.render.getTextWidth(rest, this.fonts.status), y + 2, this.colors.ink, this.colors.white);
-    // @endif
 
     this.text(
       value,
@@ -935,11 +618,7 @@ class CrimsonBearWatchface {
     this.text(
       `${DAYS[now.getDay()]} ${now.getDate()}`,
       this.fonts.label,
-      // @if luped
-      this.colors.pale,
-      // @else
       this.colors.white,
-      // @endif
       5,
       height - footerHeight + 5
     );
@@ -957,11 +636,7 @@ class CrimsonBearWatchface {
     this.text(
       battery,
       this.fonts.label,
-      // @if luped
-      this.colors.pale,
-      // @else
       this.colors.white,
-      // @endif
       batteryLeft,
       height - footerHeight + 5
     );
@@ -1002,14 +677,10 @@ class CrimsonBearWatchface {
     const radius = (width >> 1) - 9;
     const cy = contentHeight - radius;
     if (!preserveStatic) this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
-    // @if luped
-    this.drawVariantRing(cx, cy, radius);
-    // @else
     this.bearBackdrop(cx, cy, radius);
     this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 3, 0, 360);
-    // @endif
     this.drawGlucose(cx, cy - 23, this.fonts.fullGlucose);
     this.text(
       this.deltaText(),
@@ -1043,12 +714,6 @@ class CrimsonBearWatchface {
     const footerHeight = 30;
     const headerHeight = Math.round(height * 0.54);
     const now = new Date();
-    // @if luped
-    if (this.hostChange || this.newProtocol) {
-      this.warningScreen(width, height);
-      return;
-    }
-    // @endif
     if (!this.configurationKnown) {
       this.connectingScreen(width, height);
       return;
@@ -1070,14 +735,10 @@ class CrimsonBearWatchface {
     const graphY = statusY + statusHeight;
     if (!preserveStatic) this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     this.drawCgmStatus(0, statusY, width, statusHeight, !preserveStatic);
-    // @if luped
-    this.drawVariantRing(cx, cy, radius, this.state.closedLoop === 0);
-    // @else
     this.bearBackdrop(cx, cy, radius);
     this.render.drawCircle(this.colors.white, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.ink, cx, cy, radius, 0, 360);
     this.render.drawCircle(this.colors.white, cx, cy, radius - 2, 0, 360);
-    // @endif
 
     this.drawGlucose(cx, cy - 23, this.fonts.fullGlucose);
     this.text(
@@ -1101,14 +762,6 @@ class CrimsonBearWatchface {
       arrowClearRadius * 2
     );
     if (!this.stale) this.arrow(arrowCx, cy, this.state.direction, this.colors.crimson);
-    // @if luped
-    if (!screen.round) {
-      this.render.fillRectangle(this.colors.pale, width - 45, 4, 45, 24);
-      this.drawLoopRing(width - 42, 10, this.colors.pale, this.colors.ink);
-    }
-    this.statusY = statusY;
-    this.loopFresh = this.loopFreshness();
-    // @endif
 
     this.graph(0, graphY, width, height - graphY - footerHeight);
     if (drawFooter) this.footer(width, height, footerHeight, now);
@@ -1169,10 +822,6 @@ class CrimsonBearWatchface {
       this.state.configured &&
       this.hasRenderedConfiguredFace &&
       this.lastRenderedFullScreen === this.state.fullScreen;
-    // @if luped
-    // The warning screen covers the footer too.
-    if (this.hostChange || this.newProtocol) contentOnly = false;
-    // @endif
     const invalidatedPixels =
       this.render.width * (contentOnly ? this.render.height - 30 : this.render.height);
     let began = false;
@@ -1185,10 +834,6 @@ class CrimsonBearWatchface {
       began = false;
       this.render.end();
       this.hasRenderedConfiguredFace = this.state.configured;
-      // @if luped
-      // The warning screen isn't the face: the first draw after it repaints all of it.
-      if (this.hostChange || this.newProtocol) this.hasRenderedConfiguredFace = false;
-      // @endif
       this.lastRenderedFullScreen = this.state.fullScreen;
       this.recordDraw("full", startedAt, invalidatedPixels);
       this.renderRetryCount = 0;
@@ -1211,10 +856,6 @@ class CrimsonBearWatchface {
 
   drawMinute(event) {
     if (!this.state.configured) return;
-    // @if luped
-    // The alarm buzz every minute while the warning screen shows.
-    if (this.hostChange || this.newProtocol) vibe();
-    // @endif
     const date = event && event.date ? event.date : new Date();
     const now = date.getTime();
     this.ensureDiagnosticsWindow();
@@ -1228,14 +869,6 @@ class CrimsonBearWatchface {
       if (late >= 1000) this.countDiagnostic("lateMinuteEvents");
     }
     this.lastMinuteEventAt = now;
-    // @if luped
-    // A request's outcome shows for a minute (or until the next reading), so a
-    // CGM gap can't leave it on screen.
-    if (this.result && now >= this.resultUntil) {
-      this.result = null;
-      this.requestRender(3);
-    }
-    // @endif
     if (now - this.lastBatterySampleAt >= BATTERY_SAMPLE_INTERVAL_MS) {
       this.updateBattery();
       this.lastBatterySampleAt = now;
@@ -1273,9 +906,6 @@ class CrimsonBearWatchface {
 
   drawMinuteNow(minuteDate = null) {
     if (!this.state.configured) return;
-    // @if luped
-    if (this.hostChange || this.newProtocol) return;
-    // @endif
     const startedAt = Date.now();
     const footerHeight = 30;
     const footerY = this.render.height - footerHeight;
@@ -1334,29 +964,6 @@ class CrimsonBearWatchface {
           this.drawBluetoothDisconnectedIndicator(indicatorX, this.render.height - 24)
         );
       }
-      // @if luped
-      // The loop age changes every minute; a change in freshness also dims or
-      // brightens IOB/COB, so that one redraws the whole face.
-      if (checkMinute && !this.state.fullScreen && this.statusY) {
-        if (this.loopFreshness() !== this.loopFresh) this.requestRender(3);
-        else if (screen.round) {
-          this.render.begin(0, this.statusY, width, 17);
-          began = true;
-          this.drawCgmStatus(0, this.statusY, width, 17);
-          began = false;
-          this.render.end();
-          invalidatedPixels += width * 17;
-        } else {
-          this.render.begin(width - 45, 4, 45, 24);
-          began = true;
-          this.render.fillRectangle(this.colors.pale, width - 45, 4, 45, 24);
-          this.drawLoopRing(width - 42, 10, this.colors.pale, this.colors.ink);
-          began = false;
-          this.render.end();
-          invalidatedPixels += 45 * 24;
-        }
-      }
-      // @endif
       if (checkMinute) {
         this.footerState.clock = clock;
         this.footerState.date = dateText;
@@ -1406,11 +1013,7 @@ class CrimsonBearWatchface {
   startMessageService() {
     try {
       this.message = new Message({
-        // @if luped
-        keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS", "RESULT"],
-        // @else
         keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS"],
-        // @endif
         onReadable: () => this.readMessages(),
         onWritable: () => this.setPhoneConnected(true),
         onSuspend: () => this.setPhoneConnected(false),
@@ -1464,32 +1067,6 @@ class CrimsonBearWatchface {
     this.requestRender(2);
   }
 
-  // @if luped
-  // Signs "<action>:<units>[:<grams>]" with the phone's session key and sends
-  // it; without a key (the phone sends one only while it may take boluses from
-  // this watch) nothing is sent. A failed write keeps the signed command, so a
-  // resend has the same sequence and confirmation time.
-  requestSignedBolus(request) {
-    const auth = this.bolusAuth;
-    if (!auth) {
-      this.result = "bolus:no key";
-      this.resultUntil = Date.now() + 60000;
-      Vibes.doublePulse();
-      this.requestRender(2);
-      return;
-    }
-    const [action, units, grams] = request.split(":");
-    const confirmedAt = Math.floor(Date.now() / 1000);
-    auth.seq += 1;
-    const mac = bolusMac(
-      auth.key,
-      `v1|${auth.sid}|${auth.seq}|${confirmedAt}|${action}|${units}|${grams || ""}`
-    );
-    this.bolusCommand = `${request}@${confirmedAt}#${auth.sid}.${auth.seq}.${mac}`;
-    this.flushOutbound();
-  }
-
-  // @endif
   // @if allowShakeDebugActionTestOnly
   requestShakeDebugAction() {
     // Feel and see that the shake registered; a RESULT from the phone replaces it.
@@ -1507,18 +1084,9 @@ class CrimsonBearWatchface {
 
   // @endif
   flushOutbound() {
-    // @if luped
-    if ((!this.refreshPending && !this.telemetryPending && !this.bolusCommand) || !this.message)
-      return;
-    const values = [];
-    // A bolus request takes the COMMAND key; a pending refresh follows it.
-    const bolus = this.bolusCommand;
-    if (bolus || this.refreshPending) values.push(["COMMAND", bolus || "refresh"]);
-    // @else
     if ((!this.refreshPending && !this.telemetryPending) || !this.message) return;
     const values = [];
     if (this.refreshPending) values.push(["COMMAND", "refresh"]);
-    // @endif
     if (this.telemetryPending)
       values.push(["DIAGNOSTICS", JSON.stringify(this.diagnosticsSnapshot())]);
     try {
@@ -1531,10 +1099,6 @@ class CrimsonBearWatchface {
           0
         )
       );
-      // @if luped
-      if (bolus) this.bolusCommand = null;
-      else
-      // @endif
       if (this.refreshPending) {
         // @if timedRefresh
         this.probing = !this.lastRefreshRequestedAt && Number(this.state.updated) > 0;
@@ -1549,19 +1113,6 @@ class CrimsonBearWatchface {
         this.lastTelemetrySentAt = Date.now();
       }
     } catch (_) {
-      // @if luped
-      // Alloy turns writes off whenever the phone's app session (Loop's, not the
-      // Pebble app's) opens or closes, and only a new Message turns them back on.
-      // Reopen it, at most every 30 s; the new one sends what is pending. Not
-      // before the first message from the phone: until then writes wait for the
-      // startup handshake, and reopening would drop the phone's first reply.
-      if (this.lastDataSignature && Date.now() - (this.reopenedAt || 0) > 30000) {
-        this.reopenedAt = Date.now();
-        this.message.close();
-        this.startMessageService();
-        return;
-      }
-      // @endif
       // Keep the request pending. onWritable will retry it when the outbox is
       // actually available, without starting a continuous refresh loop.
       this.countDiagnostic("refreshDeferred");
@@ -1584,13 +1135,7 @@ class CrimsonBearWatchface {
     this.stale = stale;
     if (stale) {
       this.countDiagnostic("staleTransitions");
-      // @if luped
-      // The no-recent-data buzz ignores Loop's alarm mask, which is 0 while
-      // Loop's alerts are muted or watch alarms are off.
-      {
-      // @else
       if (this.state.alarmEnabled) {
-      // @endif
         this.countDiagnostic("staleAlarms");
         Vibes.shortPulse();
       }
@@ -1598,8 +1143,6 @@ class CrimsonBearWatchface {
     return true;
   }
 
-  // @if luped
-  // @else
   // CrimsonBear evaluates glucose thresholds on the watch. Luped does not — its
   // alerts are host-issued (see checkHostAlert) — so this method is omitted there.
   checkGlucoseAlarm() {
@@ -1644,75 +1187,7 @@ class CrimsonBearWatchface {
     );
     vibe();
   }
-  // @endif
 
-  // @if luped
-  // Host-issued alerts: Loop/Trio evaluate their own alerts. DATA index 8 is the
-  // highest active level; index 9 is an alert event the host advances on every
-  // fire, including repeats of an alert that is still active. The watch buzzes
-  // when the event changes while the level is above 0, so it repeats in step
-  // with the host and stops when the user acknowledges on the phone. The event
-  // is recorded on every message, even while silent (watch alarms off sends
-  // level 0), and the first one after a start is recorded without buzzing.
-  // Any level gets the full glucose-alarm buzz: without the iOS critical-alert
-  // entitlement, urgent alerts arrive at warning level.
-  //
-  // PebbleOS drops an app's buzz while another vibration plays and cancels it
-  // when a system pop-up closes, without telling the app. The last 5 buzzes
-  // are kept in the diagnostics as [event, level, start time, outcome] so a
-  // missed one can be matched to a pop-up: outcome -2 vibe() failed, -1 not
-  // covered, 0 already covered, otherwise the ms into the buzz a pop-up covered
-  // the face. Events that arrive at level 0 (Watch Alarms off) are counted.
-  // Loop's freshness thresholds (LoopCompletionFreshness): fresh up to 6
-  // minutes, aging up to 16, stale after that or when unknown.
-  loopFreshness() {
-    const age = Date.now() - Number(this.state.lastLoop);
-    return !this.state.lastLoop ? 2 : age <= 360000 ? 0 : age <= 960000 ? 1 : 2;
-  }
-
-  // Loop's status ring with the minutes since the last loop: a full ring when
-  // the loop is closed, a 90° gap at the top when it is open (as Loop), coloured
-  // by freshness.
-  // Nothing when the host sends no loop status.
-  drawLoopRing(x, y, background, textColor) {
-    const { lastLoop, closedLoop } = this.state;
-    if (lastLoop == null && closedLoop == null) return;
-    const r = 6;
-    const minutes = Math.max(0, Math.floor((Date.now() - lastLoop) / 60000));
-    const color = this.colors.loop[this.loopFreshness()];
-    if (closedLoop === 0) this.render.drawCircle(color, x + r, y + r, r, 45, 315);
-    else this.render.drawCircle(color, x + r, y + r, r, 0, 360);
-    this.render.drawCircle(background, x + r, y + r, r - 2, 0, 360);
-    this.text(
-      !lastLoop ? "--" : minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`,
-      this.fonts.status,
-      textColor,
-      x + 2 * r + 3,
-      y - 3
-    );
-  }
-
-  checkHostAlert() {
-    const event = this.state.alertEvent;
-    if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent) {
-      if (this.state.hostAlertState > 0) {
-        const buzz = [event, this.state.hostAlertState, Date.now(), this.coveredAt ? 0 : -1];
-        try {
-          vibe();
-        } catch (_) {
-          buzz[3] = -2;
-        }
-        this.ensureDiagnosticsWindow();
-        const buzzes = this.diagnostics.buzzes;
-        buzzes.push(buzz);
-        if (buzzes.length > 5) buzzes.shift();
-      } else {
-        this.countDiagnostic("silentAlertEvents");
-      }
-    }
-    this.lastAlertEvent = event;
-  }
-  // @endif
 
   // Phone-to-watch messaging
 
@@ -1736,66 +1211,7 @@ class CrimsonBearWatchface {
           this.refreshStartedAt = 0;
         }
         try {
-          // @if luped
-          // Minimal Luped protocol: [version, glucose, delta, trend, history,
-          // unitsFlag, timestamp, fullScreen, hostAlertState, alertEvent, ...].
-          // Alerts are host-issued (indexes 8-9). No thresholds travel and the
-          // watch has none: index 8 (the active glucose alert) colours the ring.
-          const values = JSON.parse(value);
-          // A newer protocol (index 0) may give these indexes other meanings:
-          // nothing is shown until the face is updated, or the phone goes back
-          // to version 1.
-          if (values[0] > 1) {
-            if (!this.newProtocol) {
-              needsFullDraw = true;
-              vibe();
-            }
-            this.newProtocol = values[0];
-            this.refreshPending = false;
-            continue;
-          }
-          if (this.newProtocol) {
-            this.newProtocol = 0;
-            needsFullDraw = true;
-          }
-          const LUPED_DIRECTIONS = [
-            "DoubleDown", "SingleDown", "FortyFiveDown", "Flat",
-            "FortyFiveUp", "SingleUp", "DoubleUp",
-          ];
-          const mmol = values[5];
-          const data = {
-            glucose: values[1],
-            delta: values[2],
-            direction: LUPED_DIRECTIONS[values[3]] || "Flat",
-            readings: values[4] || [],
-            units: mmol ? "mmol/L" : "mg/dL",
-            updated: values[6],
-            fullScreen: Boolean(values[7]),
-            hostAlertState: values[8] || 0,
-            alertEvent: values[9],
-            // Loop status (null when the host sends none; absent from older hosts).
-            iob: values[10],
-            cob: values[11],
-            lastLoop: values[12],
-            closedLoop: values[13],
-            // A status line the phone formatted (temp basal, eventual glucose,
-            // ISF & target); null means IOB and COB, formatted here.
-            statusLine: values[14],
-          };
-          // The first host app named (index 15) is the one this run follows;
-          // a different one later means two phone apps share the watch, so
-          // the face stops showing data until it is restarted.
-          const host = values[15];
-          if (host != null && this.host == null) this.host = host;
-          else if (host != null && host !== this.host && !this.hostChange) {
-            this.hostChange = [this.host, host];
-            this.bolusAuth = null;
-            needsFullDraw = true;
-            vibe();
-          }
-          // @else
           const data = expandData(JSON.parse(value));
-          // @endif
           const signature = JSON.stringify(data);
           const readingAdvanced = Number(data.updated) !== Number(this.state.updated);
           needsFullDraw =
@@ -1819,9 +1235,6 @@ class CrimsonBearWatchface {
           }
           // @endif
           if (readingAdvanced) this.lastRefreshRequestedAt = 0;
-          // @if luped
-          if (readingAdvanced) this.result = null;
-          // @endif
           this.refreshPending = false;
           needsFullDraw = this.updateStaleState() || needsFullDraw;
           receivedData = true;
@@ -1837,17 +1250,6 @@ class CrimsonBearWatchface {
         this.refreshStartedAt = 0;
         needsFullDraw = needsFullDraw || this.state.error !== value;
         this.state.error = value;
-      // @if luped
-      } else if (key === "RESULT") {
-        // The phone's "<action>:<outcome>" for a watch request, shown in the
-        // status strip for a minute or until the next reading: a short buzz when it was carried
-        // out, a double buzz when it wasn't.
-        this.result = value;
-        this.resultUntil = Date.now() + 60000;
-        if (value.endsWith(":ok")) Vibes.shortPulse();
-        else Vibes.doublePulse();
-        needsFullDraw = true;
-      // @endif
       } else if (key === "CONFIGURED") {
         const configured = Boolean(value);
         needsFullDraw =
@@ -1856,13 +1258,6 @@ class CrimsonBearWatchface {
           this.state.configured !== configured;
         this.configurationKnown = true;
         this.state.configured = configured;
-      // @if luped
-      } else if (key === "COMMAND" && value.startsWith("auth:v1:") && !this.hostChange) {
-        // The phone's session key for signed boluses, kept in memory only: a
-        // restart forgets it and the phone sends a new one.
-        const [, , sid, keyHex] = value.split(":");
-        this.bolusAuth = { sid, key: hmacKey(hexBytes(keyHex)), seq: 0 };
-      // @endif
       } else if (key === "COMMAND" && value === "diagnostics") {
         this.requestDiagnostics();
       } else if (key === "COMMAND" && value === "diagnostics-reset") {
@@ -1875,11 +1270,7 @@ class CrimsonBearWatchface {
     // that this message has already satisfied.
     this.setPhoneConnected(true);
     if (receivedData) {
-      // @if luped
-      this.checkHostAlert();
-      // @else
       this.checkGlucoseAlarm();
-      // @endif
     }
     if (needsFullDraw) this.draw();
   }

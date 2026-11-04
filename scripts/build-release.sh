@@ -6,27 +6,24 @@ repo_root="$(pwd)"
 
 do_build=false
 do_install=false
-measure_memory=false
 install_target="--phone"
 do_publish=false
 do_minify=true
 skip_deps=false
 release_notes=""
 interactive=false
+# The build stage keeps its per-variant path (build/variants/crimsonbear/project).
 variant="crimsonbear"
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/build-release.sh [--variant crimsonbear|luped] [--build] [--install] [--measure-memory] [--cloudpebble] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
+Usage: ./scripts/build-release.sh [--build] [--install] [--cloudpebble] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
 
 With no arguments, the script interactively selects actions. Explicit action flags
 run without prompts. --install targets the connected phone (--cloudpebble installs
-through CloudPebble instead). --measure-memory (Luped, with --build --install)
-builds with the firmware's XS memory counters, measures the watchface's memory on
-the watch after installing, then restarts it without them; never publish that
-build, as the counters wake the watch every second; --publish pushes main
+through CloudPebble instead). --publish pushes main
 to GitHub and publishes the release to the RePebble store without requiring
---build or --install. Both variants publish under their own store listing. The Pebble
+--build or --install. The Pebble
 publisher still performs its mandatory package build. Minification is ON by default: it
 safely compresses and mangles internal watch JavaScript identifiers without mangling
 protocol properties, which keeps the Alloy resource pack small enough to launch on the
@@ -41,17 +38,8 @@ if [[ $# -eq 0 ]]; then
 else
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --variant)
-        if [[ $# -lt 2 ]]; then
-          echo "--variant requires crimsonbear or luped." >&2
-          exit 2
-        fi
-        variant="$2"
-        shift
-        ;;
       --build) do_build=true ;;
       --install) do_install=true ;;
-      --measure-memory) measure_memory=true ;;
       --cloudpebble) install_target="--cloudpebble" ;;
       --publish) do_publish=true ;;
       --minify) do_minify=true ;;
@@ -79,12 +67,6 @@ else
   done
 fi
 
-if [[ "$variant" != "crimsonbear" && "$variant" != "luped" ]]; then
-  echo "Unknown variant: $variant" >&2
-  usage >&2
-  exit 2
-fi
-
 confirm() {
   local prompt="$1"
   local default="$2"
@@ -95,12 +77,6 @@ confirm() {
 }
 
 if [[ "$interactive" == true ]]; then
-  read -r -p "Variant [crimsonbear/luped] (crimsonbear): " variant
-  variant="${variant:-crimsonbear}"
-  if [[ "$variant" != "crimsonbear" && "$variant" != "luped" ]]; then
-    echo "Unknown variant: $variant" >&2
-    exit 2
-  fi
   if confirm "Build the PBW? [Y/n] " y; then do_build=true; fi
   if confirm "Install on the connected phone? [y/N] " n; then do_install=true; fi
   if confirm "Push GitHub and publish to RePebble? [y/N] " n; then
@@ -125,7 +101,7 @@ if [[ -z "$pebble_bin" ]]; then
 fi
 # Memory limits. The archive guard below is a coarse proxy; what actually
 # runs out is the XS machine (see AGENTS.md): by default a fixed 32 KB static
-# block, or the stack/slot/chunk sizes the variant's C stub asks for, taken
+# block, or the stack/slot/chunk sizes the C stub asks for, taken
 # from the app heap (about 122 KB on a Pebble Time 2, shared with AppMessage
 # buffers and PebbleOS).
 print_xs_machine() {
@@ -149,7 +125,7 @@ print_archive_modules() {
   for xsb in "$files"/*.xsb; do
     name="$(basename "$xsb" .xsb)"
     size="$(wc -c < "$xsb" | tr -d ' ')"
-    if [[ "$name" == "main" || ("$variant" != "luped" && "$name" == "protocol") ]]; then
+    if [[ "$name" == "main" || "$name" == "protocol" ]]; then
       printf '  %-24s %7s B\n' "$name" "$size"
     else
       printf '  %-24s %7s B  <- not imported by %s; check the manifest\n' "$name" "$size" "$display_name"
@@ -157,64 +133,18 @@ print_archive_modules() {
   done
 }
 
-# After a --measure-memory install: restart the watchface with app logs on,
-# report its XS memory from the firmware's instrumentation, then restart it
-# with logs off so the counters stop.
-print_xs_usage() {
-  local line
-  echo "Measuring XS memory on the watch (15 s)..."
-  line="$( (echo "APP='$app_uuid'; WAIT=15"; echo "exec(open('$PWD/scripts/xs-usage.py').read())"; echo "exit()") \
-    | "$pebble_bin" repl "$install_target" 2>&1 | grep -o 'XSUSAGE.*' | tail -1)"
-  case "$line" in
-    "XSUSAGE FATAL"*) echo "XS memory: the watchface crashed: ${line#XSUSAGE FATAL }" >&2; return 1 ;;
-    "XSUSAGE NONE"|"") echo "XS memory: no instrumentation received (the C stub needs LUPED_XS_INSTRUMENTATION)."; return 0 ;;
-  esac
-  python3 - "$line" <<'PY'
-import sys
-v = dict(kv.split("=") for kv in sys.argv[1].split()[1:])
-v = {k: int(x) for k, x in v.items()}
-def row(name, used, avail, warn):
-    pct = 100 * used / avail if avail else 0
-    flag = "  <- close to the limit" if pct >= warn else ""
-    print("  %-8s %7d / %7d B  %5.1f%%%s" % (name, used, avail, pct, flag))
-if v.get("live_slot", -1) >= 0:
-    print("XS memory in use on the watch (after the last garbage collection in %d samples):" % v["samples"])
-    row("slots", v["live_slot"], v["slot_avail"], 85)
-    row("chunks", v["live_chunk"], v["chunk_avail"], 85)
-else:
-    print("XS memory in use: unknown, no garbage collection in %d samples (the peak below includes garbage)." % v["samples"])
-print("Peak, including garbage not yet collected (XS collects only when it runs short):")
-row("slots", v["slot_used"], v["slot_avail"], 101)
-row("chunks", v["chunk_used"], v["chunk_avail"], 101)
-row("stack", v["stack_used"], v["stack_avail"], 75)
-free = v["appfree_min"]
-print("  app heap free for PebbleOS: %d B%s" % (free, "  <- low, keep 12 KB or more" if free < 12 * 1024 else ""))
-print("  garbage collections: %d, keys: %d" % (v["gcs"], v["keys"]))
-PY
-}
-
 if [[ -z "$pebble_bin" || ! -x "$pebble_bin" ]]; then
   echo "Set PEBBLE_BIN to an executable pebble-tool command." >&2
   exit 1
 fi
 
-if [[ "$variant" == "luped" ]]; then
-  package_file="variants/luped/package.json"
-  artifact="build/luped-cgm.pbw"
-  display_name="Luped CGM"
-  screenshot_prefix="emery_luped"
-  store_icon_dir="variants/luped/assets"
-  store_icon_prefix="luped"
-  store_description="A Loop-styled CGM watchface for Pebble Time 2 and Pebble Round 2. Requires a direct watch connection from a supported iPhone app such as Loop or Trio; the watchface has no Pebble app settings and does not fetch glucose data on its own."
-else
-  package_file="package.json"
-  artifact="build/pebble.pbw"
-  display_name="CrimsonBear Cgm"
-  screenshot_prefix="emery"
-  store_icon_dir="assets"
-  store_icon_prefix="crimsonbear"
-  store_description="A Nightscout CGM watchface for Pebble Time 2 and Pebble Round 2."
-fi
+package_file="package.json"
+artifact="build/pebble.pbw"
+display_name="CrimsonBear Cgm"
+screenshot_prefix="emery"
+store_icon_dir="assets"
+store_icon_prefix="crimsonbear"
+store_description="A Nightscout CGM watchface for Pebble Time 2 and Pebble Round 2."
 version="$(node -p "require('./$package_file').version")"
 app_uuid="$(node -p "require('./$package_file').pebble.uuid")"
 stage="build/variants/$variant/project"
@@ -292,37 +222,17 @@ NODE
 prepare_stage() {
   rm -rf "$stage"
   mkdir -p "$stage/src/c" "$stage/src/embeddedjs" "$stage/resources/images"
-  # Luped sizes its own XS machine (variants/luped/src/c/mdbl.c).
-  if [[ -f "variants/$variant/src/c/mdbl.c" ]]; then
-    if [[ "$measure_memory" == true ]]; then
-      { echo "#define LUPED_XS_INSTRUMENTATION 1"; cat "variants/$variant/src/c/mdbl.c"; } > "$stage/src/c/mdbl.c"
-    else
-      cp "variants/$variant/src/c/mdbl.c" "$stage/src/c/mdbl.c"
-    fi
-  else
-    cp src/c/mdbl.c "$stage/src/c/mdbl.c"
-  fi
-  # Luped imports nothing from protocol.js; leaving it out keeps it out of the
-  # Alloy archive, where every module counts against the memory limit.
-  if [[ "$variant" != "luped" ]]; then
-    cp src/embeddedjs/protocol.js "$stage/src/embeddedjs/protocol.js"
-  fi
+  cp src/c/mdbl.c "$stage/src/c/mdbl.c"
+  cp src/embeddedjs/protocol.js "$stage/src/embeddedjs/protocol.js"
   assemble_watchface \
     src/embeddedjs/main.js.in \
     "variants/$variant/watchface-config.json" \
     "$stage/src/embeddedjs/main.js"
 
-  if [[ "$variant" == "luped" ]]; then
-    cp variants/luped/package.json "$stage/package.json"
-    cp variants/luped/wscript "$stage/wscript"
-    cp variants/luped/src/embeddedjs/manifest.json "$stage/src/embeddedjs/manifest.json"
-    cp variants/luped/resources/images/luped-menu-icon.png "$stage/resources/images/luped-menu-icon.png"
-  else
-    cp package.json package-lock.json wscript "$stage/"
-    cp src/embeddedjs/manifest.json "$stage/src/embeddedjs/manifest.json"
-    cp -R src/pkjs "$stage/src/pkjs"
-    cp resources/images/crimsonbear-menu-icon.png "$stage/resources/images/crimsonbear-menu-icon.png"
-  fi
+  cp package.json package-lock.json wscript "$stage/"
+  cp src/embeddedjs/manifest.json "$stage/src/embeddedjs/manifest.json"
+  cp -R src/pkjs "$stage/src/pkjs"
+  cp resources/images/crimsonbear-menu-icon.png "$stage/resources/images/crimsonbear-menu-icon.png"
 }
 
 verify_installed_dependencies() {
@@ -372,17 +282,6 @@ delete packageData.devDependencies;
 fs.writeFileSync(packagePath, `${JSON.stringify(packageData, null, 2)}\n`);
 NODE
 }
-
-if [[ "$measure_memory" == true ]]; then
-  if [[ "$do_publish" == true ]]; then
-    echo "--measure-memory builds with the XS memory counters and cannot be used with --publish." >&2
-    exit 2
-  fi
-  if [[ "$do_build" != true || "$do_install" != true ]]; then
-    echo "--measure-memory needs --build and --install." >&2
-    exit 2
-  fi
-fi
 
 if [[ "$do_publish" == true && "$skip_deps" == true ]]; then
   echo "--skip-deps is for local builds only and cannot be used with --publish." >&2
@@ -437,7 +336,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
     # Only these CrimsonBearWatchface prototype methods are eligible for property
     # mangling. State, diagnostics, AppMessage, Pebble and renderer properties are
     # deliberately absent so the phone/mobile protocol and host APIs stay stable.
-    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|bearBackdrop|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|checkGlucoseAlarm|readMessages|loopFreshness|drawLoopRing)$/'
+    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|bearBackdrop|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|checkGlucoseAlarm|readMessages)$/'
     for watch_module in main protocol; do
       readable_module="$stage/src/embeddedjs/$watch_module.js"
       [[ -f "$readable_module" ]] || continue
@@ -474,11 +373,8 @@ fi
 if [[ "$do_build" == true ]]; then
   echo "Building $display_name $version..."
   (cd "$stage" && "$pebble_bin" build)
-  # The 32,133-byte guard is for the default 32 KB XS block (CrimsonBear).
-  # Luped's own stub gives XS 52 KB from the app heap, so its limit is XS
-  # memory use, measured on the watch with --install, not the archive size.
+  # The 32,133-byte guard is for the default 32 KB XS block.
   alloy_limit=32133
-  [[ "$variant" == luped ]] && alloy_limit=""
   echo
   printf '%-10s %12s %12s %12s %14s\n' \
     "Platform" "App binary" "Alloy size" "Headroom" "Headroom %"
@@ -487,10 +383,6 @@ if [[ "$do_build" == true ]]; then
     app_binary="$stage/build/$platform/pebble-app.bin"
     resource_size="$(wc -c < "$resource_pack" | tr -d ' ')"
     app_size="$(wc -c < "$app_binary" | tr -d ' ')"
-    if [[ -z "$alloy_limit" ]]; then
-      printf '%-10s %9s B %9s B %12s %14s\n' "$platform" "$app_size" "$resource_size" "-" "-"
-      continue
-    fi
     if ((resource_size >= alloy_limit)); then
       echo "$display_name $platform resources are $resource_size bytes; the safe limit is below $alloy_limit." >&2
       exit 1
@@ -501,11 +393,7 @@ if [[ "$do_build" == true ]]; then
     printf '%-10s %9s B %9s B %9s B %14s\n' \
       "$platform" "$app_size" "$resource_size" "$alloy_headroom" "$alloy_headroom_percent"
   done
-  if [[ -n "$alloy_limit" ]]; then
-    echo "Alloy limit: $alloy_limit bytes (build fails at or above this size)."
-  else
-    echo "Alloy limit: XS memory on the watch, not the archive size; use --install --measure-memory to measure slots, chunks and free app heap."
-  fi
+  echo "Alloy limit: $alloy_limit bytes (build fails at or above this size)."
   print_xs_machine
   print_archive_modules
   cp "$stage/build/project.pbw" "$artifact"
@@ -527,9 +415,6 @@ if [[ "$do_install" == true ]]; then
   fi
   echo "Installing $display_name $version (${install_target#--})..."
   "$pebble_bin" install "$artifact" "$install_target"
-  if [[ "$measure_memory" == true ]]; then
-    print_xs_usage
-  fi
 fi
 
 if [[ "$do_publish" == true ]]; then
